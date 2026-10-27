@@ -1,7 +1,7 @@
 /* Underwater IVD ROV Lab: UI, builder, pilot loop, heats, scoring, turn-in and the teacher view. */
 (function () {
   const U = window.UIVD;
-  const { IN, PARTS, CATS, ELECTRICAL, DIRS, Design, Physics, World, Missions, FITTINGS } = U;
+  const { IN, PARTS, CATS, ELECTRICAL, DIRS, Design, Physics, World, Missions, FITTINGS, Extras } = U;
   const { MISSIONS } = Missions;
   const $ = s => document.querySelector(s);
   const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -22,7 +22,7 @@
   let sel = null; // {kind:'joint'|'pipe'|'part', p, i, id}
   let mirror = store.get('mirror', true);
   let pipeLen = store.get('pipeLen', 6);
-  const opts = Object.assign({ sound: false, murky: false, touch: matchMedia('(pointer: coarse)').matches, balance: true, map: true }, store.get('opts', {}));
+  const opts = Object.assign({ sound: false, murky: false, touch: matchMedia('(pointer: coarse)').matches, balance: true, map: true, junior: false }, store.get('opts', {}));
   let progress = store.get('progress', {});
   let undoStack = [], redoStack = [];
 
@@ -593,8 +593,24 @@
     if (mode === 'build') renderBuild(); else renderPilot();
   }
 
+  // Junior mode skips the wiring step, so only the build checks count toward its inspection.
+  function insView() {
+    const ins = Design.inspect(design);
+    if (!opts.junior) return ins;
+    const items = ins.items.filter(i => i.kind === 'build' || i.id === 'B3');
+    return Object.assign({}, ins, { items, ok: items.filter(i => i.kind !== 'warn').every(i => i.pass) });
+  }
+  const activeSteps = () => opts.junior ? STEPS.filter(s => s.k !== 'power') : STEPS;
+  const JR_GOALS = {
+    frame: 'The frame holds everything together. Drag the sliders to make your box the size you want.',
+    motors: 'Motors push your ROV. Pick a layout to start. The green arrows show which way each motor pushes.',
+    camera: 'The pilot drives by looking through the camera. Point it at the front so you can see where you are going.',
+    tools: 'Tools grab and measure things in the challenges. Pick the ones you need.',
+    trim: 'Make it float just a little. Noodles make it float more, weights make it sink more. Aim for the green zone.',
+    check: 'Check that everything is ready, then take your ROV to the pool!'
+  };
   function stepStatus() {
-    const mp = Design.massProps(design), ins = Design.inspect(design);
+    const mp = Design.massProps(design), ins = insView();
     const thr = design.parts.filter(p => PARTS[p.type].kind === 'thruster');
     const elecOk = Object.keys(ELECTRICAL).every(k => ELECTRICAL[k].options[design.elec[k]].pass);
     return {
@@ -609,7 +625,7 @@
   }
 
   function buildSummary() {
-    const mp = Design.massProps(design), ins = Design.inspect(design);
+    const mp = Design.massProps(design), ins = insView();
     const net = Math.round(mp.net);
     let bCls, bTxt, bSub;
     if (!design.pipes.length) { bCls = ''; bTxt = '—'; bSub = 'no frame yet'; }
@@ -631,11 +647,12 @@
       <div class="stat ${bCls}" title="Net buoyancy in fresh water: positive floats up, negative sinks"><span>Buoyancy</span><b>${bTxt}</b><small>${bSub}</small></div>
       <div class="stat ${tCls}" title="How the ROV sits at rest"><span>Balance</span><b>${tTxt}</b><small>${tSub}</small></div>
       <div class="stat ${cost > 2000 ? 'bad' : ''}" title="Build budget, full retail price"><span>Cost</span><b>${fmt$(cost)}</b><small>${cost > 2000 ? 'over $2,000' : 'of $2,000'}</small></div>
-      <div class="stat ${fails ? 'bad' : 'good'}"><span>Inspection</span><b>${fails ? fails + ' to fix' : 'Pass'}</b><small>${fails ? 'see step 7' : 'ready'}</small></div>
+      <div class="stat ${fails ? 'bad' : 'good'}"><span>Inspection</span><b>${fails ? fails + ' to fix' : 'Pass'}</b><small>${fails ? 'see the Check step' : 'ready'}</small></div>
     </div>`;
   }
 
   function setStep(k, quiet) {
+    if (opts.junior && k === 'power') k = 'check';
     buildStep = k; store.set('buildStep', k);
     if (placing) placing = null;
     if (!quiet) { sel = null; rebuildBuilder(); renderBuild(); $('#sideBody').scrollTop = 0; }
@@ -643,6 +660,8 @@
 
   function renderBuild() {
     const st = stepStatus();
+    if (opts.junior && buildStep === 'power') buildStep = 'check';
+    const STEPS = activeSteps();
     $('#sideHead').innerHTML = buildSummary() + `<ol class="stepper" aria-label="Build steps">${STEPS.map((s, i) =>
       `<li><button data-step="${s.k}" aria-current="${buildStep === s.k ? 'step' : 'false'}" class="${st[s.k] ? 'done' : ''}"><span class="num">${st[s.k] ? '✓' : i + 1}</span>${s.label}</button></li>`).join('')}</ol>`;
     const B = $('#sideBody');
@@ -657,12 +676,15 @@
     return `<div class="placing"><div><b>Placing: ${esc(P.short)}</b><br>Click the side of a pipe in the 3D view where you want it. Hold Shift to place more than one.</div><button class="btn small" data-act="cancelPlace">Cancel (Esc)</button></div>`;
   }
 
-  const stepHead = (n, title, goal) => `<div class="stephead"><span class="sec-label">Step ${n} of 7</span><h3>${title}</h3><p class="note">${goal}</p></div>`;
+  const stepHead = (n, title, goal) => {
+    const S = activeSteps(), i = S.findIndex(s => s.k === buildStep);
+    return `<div class="stephead"><span class="sec-label">Step ${i + 1} of ${S.length}${opts.junior ? ' · Junior mode' : ''}</span><h3>${title}</h3><p class="note">${opts.junior && JR_GOALS[buildStep] ? JR_GOALS[buildStep] : goal}</p></div>`;
+  };
 
   function partCards(filter, tags) {
     return `<div class="cat">${Object.entries(PARTS).filter(([, P]) => filter(P)).map(([k, P]) => {
       const lift = Math.round(P.cm3 - P.g);
-      const extra = P.kind === 'thruster' ? `${P.thrust} N push · ${P.amps} A` : P.kind === 'float' || P.kind === 'weight' ? (lift >= 0 ? `lifts ${lift} g` : `sinks ${-lift} g`) : `${P.g} g`;
+      const extra = P.kind === 'thruster' ? (opts.junior ? ({ gph500: 'gentle push', gph750: 'medium push', gph1100: 'strong push' })[k] : `${P.thrust} N push · ${P.amps} A`) : P.kind === 'float' || P.kind === 'weight' ? (lift >= 0 ? `lifts ${lift} g` : `sinks ${-lift} g`) : `${P.g} g`;
       return `<button class="pcard ${placing && placing.type === k ? 'on' : ''}" data-place="${k}" title="${esc(P.note)}"><b>${esc(P.short)}</b><span>${fmt$(P.price)} · ${extra}</span>${tags && tags[k] ? `<em>${tags[k]}</em>` : ''}</button>`;
     }).join('')}</div>`;
   }
@@ -720,12 +742,12 @@
         <label class="chk"><input type="checkbox" id="mirror" ${mirror ? 'checked' : ''}> Mirror left and right (keeps the ROV balanced)</label>
         ${sel && sel.kind !== 'part' ? `<button class="btn small" data-act="del">Delete the selected ${sel.kind === 'joint' ? 'joint and its pipes' : 'pipe'}</button>` : ''}
       </details>
-      <div class="sec"><span class="sec-label">Pipes: flooded or sealed?</span>
+      ${opts.junior ? '' : `<div class="sec"><span class="sec-label">Pipes: flooded or sealed?</span>
         <label class="chk"><input type="radio" name="seal" value="0" ${design.sealed ? '' : 'checked'}> <span><b>Flooded</b>: drill holes so water fills the pipes. Simple and reliable; the frame sinks a little.</span></label>
         <label class="chk"><input type="radio" name="seal" value="1" ${design.sealed ? 'checked' : ''}> <span><b>Sealed</b>: glue and cap everything so air stays inside. The frame floats, but one leak changes everything.</span></label></div>
       <details><summary>Cut list: ${Math.round(inches)} in of pipe, ${Object.values(fc).reduce((a, b) => a + b, 0)} fittings</summary>
         <p class="note" style="margin-top:6px">${design.pipes.length} pieces from ${Math.ceil(inches / 120)} × 10 ft stick${Math.ceil(inches / 120) === 1 ? '' : 's'}. Lengths are center to center of the fittings.</p>
-        <div class="tbl-wrap"><table class="tbl"><tbody>${Object.keys(FITTINGS).filter(k => fc[k]).map(k => `<tr><td>${FITTINGS[k].name}</td><td class="n">${fc[k]}</td></tr>`).join('') || '<tr><td class="note">No fittings yet</td></tr>'}</tbody></table></div></details>
+        <div class="tbl-wrap"><table class="tbl"><tbody>${Object.keys(FITTINGS).filter(k => fc[k]).map(k => `<tr><td>${FITTINGS[k].name}</td><td class="n">${fc[k]}</td></tr>`).join('') || '<tr><td class="note">No fittings yet</td></tr>'}</tbody></table></div></details>`}
       <details><summary>Or start from a ready-made ROV</summary><div class="row" style="margin-top:6px">${Object.entries(Design.PRESETS).map(([k, p]) => `<button class="btn small" data-preset="${k}">${esc(p.label.split(' (')[0])}</button>`).join('')}</div></details>`;
   }
 
@@ -739,7 +761,7 @@
         <div class="layouts">${Object.entries(MOTOR_LAYOUTS).map(([k, L]) => `<button class="pcard" data-layout="${k}"><b>${L.label}</b><span>${L.desc}</span></button>`).join('')}</div>
         <p class="note">A layout replaces the motors you have now.</p></div>
       <div class="sec"><span class="sec-label">Or place them one at a time</span>${partCards(isT)}</div>
-      ${n ? `<div class="sec"><span class="sec-label">Motors on your ROV (${n}) · ${amps.toFixed(1)} A at full power ${amps > fuseA ? '<span class="pill fail">over the fuse</span>' : ''}</span>${partList(isT)}</div>` : ''}
+      ${n ? `<div class="sec"><span class="sec-label">Motors on your ROV (${n})${opts.junior ? '' : ` · ${amps.toFixed(1)} A at full power ${amps > fuseA ? '<span class="pill fail">over the fuse</span>' : ''}`}</span>${partList(isT)}</div>` : ''}
       <p class="tip"><b>Tip:</b> the green arrows on the model show which way each motor pushes. Mount forward motors near the middle height of the ROV so it doesn’t tip up when it drives.</p>`;
   }
 
@@ -781,7 +803,7 @@
     return stepHead(5, 'Trim it to float just right', 'Add pool noodles to lift it and weights to sink it. Aim for the green zone: slightly floaty, so a dead ROV comes back up. Keep it level.') + partEditor(isTW) + `
       <div class="card"><div class="row between"><b>${verdict}</b>${net > 90 || net < -15 ? `<button class="btn small go" data-act="autoTrim">${net > 90 ? 'Add weights for me' : 'Add floats for me'}</button>` : ''}</div>
         ${gauge(mp.net)}
-        <div class="trim">${trimSvg(mp)}<div class="sec" style="gap:6px"><dl class="kv"><dt>Weight in air</dt><dd>${mp.M.toFixed(0)} g</dd><dt>Water pushed aside</dt><dd>${mp.V.toFixed(0)} cm³</dd><dt>Lift in water</dt><dd>${net >= 0 ? '+' : ''}${net} g</dd></dl>
+        <div class="trim">${trimSvg(mp)}<div class="sec" style="gap:6px">${opts.junior ? '' : `<dl class="kv"><dt>Weight in air</dt><dd>${mp.M.toFixed(0)} g</dd><dt>Water pushed aside</dt><dd>${mp.V.toFixed(0)} cm³</dd><dt>Lift in water</dt><dd>${net >= 0 ? '+' : ''}${net} g</dd></dl>`}
           <p class="note"><span class="dot-r"></span> weight pulls down here<br><span class="dot-b"></span> water lifts up here</p></div></div>
         ${tips.map(t => `<p class="note">• ${esc(t)}</p>`).join('')}
       </div>
@@ -796,10 +818,13 @@
   }
 
   function checkStep() {
-    const ins = Design.inspect(design), b = Design.bounds(design);
+    const ins = insView(), b = Design.bounds(design);
     const sz = b.size.map(v => Math.round(v));
     const row = i => `<li><span class="id">${esc(i.id)}</span><span>${esc(i.text)}${i.why ? `<span class="why">${esc(i.why)}</span>` : ''}${i.kind === 'self' ? `<label class="chk" style="margin-top:4px"><input type="checkbox" data-self="${i.id}" ${i.pass ? 'checked' : ''}> We checked this on our real ROV</label>` : ''}</span><span class="pill ${i.pass ? 'pass' : i.kind === 'warn' ? 'warn' : 'fail'}">${i.pass ? 'Pass' : i.kind === 'warn' ? 'Warning' : 'Fix'}</span></li>`;
-    return stepHead(7, 'Inspection and budget', 'This is the official 2027 inspection form plus a few build checks. Fix anything red, then take your ROV to the pool.') + `
+    const shop = `<div class="card"><span class="sec-label">Build the real one</span><p class="note">The shop sheet has drawings, a cut list with exact pipe lengths, where every part goes, a wiring diagram and the inspection checklist. Open it in a browser and print it for the shop.</p><div class="row"><button class="btn go" data-act="shopSheet">Download the shop sheet</button></div></div>`;
+    if (opts.junior) return stepHead(7, 'Ready to dive?', '') + `<div class="sec"><ul class="insp">${ins.items.map(row).join('')}</ul></div>
+      <div class="card"><dl class="kv"><dt>Build cost</dt><dd>${fmt$(ins.budget.total)} of $2,000</dd><dt>Size</dt><dd>${sz.join(' × ')} in</dd></dl></div>${shop}`;
+    return stepHead(7, 'Inspection and budget', 'This is the official 2027 inspection form plus a few build checks. Fix anything red, then take your ROV to the pool.') + shop + `
       <div class="card"><dl class="kv"><dt>Size (W × H × L)</dt><dd>${sz.join(' × ')} in ${Math.max(...sz) <= 24 ? '· fits the drag race' : '· too big for the drag race'}</dd><dt>Full-power current</dt><dd>${Design.fullPowerAmps(design).toFixed(1)} A</dd><dt>Build cost</dt><dd>${fmt$(ins.budget.total)} of $2,000</dd></dl></div>
       <div class="sec"><span class="sec-label">2027 Underwater IVD inspection form</span><ul class="insp">${ins.items.filter(i => i.kind === 'rule' || i.kind === 'self').map(row).join('')}</ul></div>
       <div class="sec"><span class="sec-label">Build checks</span><ul class="insp">${ins.items.filter(i => i.kind === 'build' || i.kind === 'warn').map(row).join('')}</ul></div>
@@ -940,6 +965,11 @@
       case 'budgetCsv': return budgetCsv();
       case 'tank': setMode('pilot'); return loadMission('tank');
       case 'goPilot': return $('#modePilot').click();
+      case 'goBuild': return setMode('build');
+      case 'shopSheet': return saveFile(slug($('#rovName').value) + '-shop-sheet.html', Extras.shopSheet(design, $('#teamName').value.trim(), $('#rovName').value));
+      case 'logRun': return logRun();
+      case 'drillAgain': return loadMission(M.def.id);
+      case 'drillNext': { const nx = 'drill' + (M.def.drill + 1); return loadMission(MISSIONS[nx] ? nx : 'practice'); }
       case 'cancelPlace': return stopPlacing();
       case 'quickCam': return quickCamera();
       case 'autoTrim': return autoTrim();
@@ -959,6 +989,7 @@
       case 'recClear': samples = []; drawChart(); return;
       case 'recCsv': return dataCsv();
       default:
+        if (name.startsWith('replay:')) { const [, id, hn] = name.split(':'); return openReplay(id, +hn); }
         if (name.startsWith('mact:')) { const a = M.def.actions[+name.slice(5)]; a && a.run(M); renderPilot(); }
     }
   }
@@ -1006,6 +1037,7 @@
         d.rounds = Math.max(d.rounds || 0, M.state.best && M.state.best.rounds || 0);
         d.runs = (d.runs || 0) + 1;
         progress.drag = d; saveProgress();
+        logTest('Drag race: ' + (Missions.DRAG_ROUNDS[Math.max(0, (M.state.round || 1) - 1)] || {}).name, res === 'win' ? `won in ${t.toFixed(2)} s` : res === 'dq' ? 'disqualified' : t ? `lost, ${t.toFixed(2)} s` : 'lost');
         setTimeout(() => { const keep = M.state; loadMission('drag', { keepRound: true }); }, 1800);
       };
     }
@@ -1013,6 +1045,10 @@
     rov.onFuse = () => { pushEvent('Fuse blown! Too much current. Replace the fuse to continue.', 'bad'); beep('bad'); };
     Physics.place(rov, V3(def.start.x, def.start.y, def.start.z), def.start.heading);
     if (id === 'drag') { const rear = Missions.rearZ(M); rov.p.z += -0.012 - rear; }
+    if (def.afterPlace) def.afterPlace(M);
+    if (opts.junior) rov.elec.fuseA = 999; // junior mode: the fuse never blows
+    M.maxSpeed = 0;
+    if (def.drill) { M.state.t = 0; M.state.started = false; M.state.locked = !drillUnlocked(def.drill); M.state.missing = drillMissing(def); }
     heat = o.heat || null; M.heat = heat;
     pilotDirty = false;
     samples = []; sampleT = 0;
@@ -1020,6 +1056,7 @@
     if (heat && heat.running) view = hasCam ? 'cam' : 'chase';
     else if (!hasCam && view === 'cam') view = 'chase';
     if (id === 'drag') view = 'deck';
+    if (def.views === 'cam' && hasCam) view = 'cam';
     camIdx = Math.min(camIdx, Math.max(0, rov.cameras.length - 1));
     $('#banner').hidden = true;
     renderViewButtons();
@@ -1036,6 +1073,7 @@
     const n = used + 1;
     const h = { n, t: 0, limit: def.heatSec, running: true, peeks: 0, divers: 0, pilotSwitched: false, bannerShown: false };
     loadMission(def.id, { heat: h });
+    h.track = []; h.events = []; h.trackT = 1; h.items = Missions.mapItems(M);
     pushEvent(`Heat ${n} started. The clock is running.`, 'good');
     beep('go');
   }
@@ -1055,6 +1093,8 @@
       P.heats = P.heats || [];
       P.heats[heat.n - 1] = rec;
       saveProgress();
+      saveReplay(def.id, heat, rec.total, returned ? heat.t : null);
+      logTest(`${def.short} heat ${heat.n}`, `${rec.total} points${returned ? ' in ' + mmss(heat.t) : ', time ran out'}`);
       pushEvent(`Heat ${heat.n} over: ${rec.total} points${returned ? ' in ' + mmss(heat.t) : ''}.${rec.complete ? ' Time bonus eligible!' : ''}`, 'good');
       beep('flag');
     }
@@ -1070,6 +1110,8 @@
       heat.awaitAnswer = false;
       progress.hoop = { answer: M.state.answer, known: +M.state.hoopArea.toFixed(5), diam: M.state.hoopD, score: sc.total, at: new Date().toISOString(), heats: [{ n: 1 }] };
       saveProgress();
+      saveReplay('hoop', heat, sc.total, heat.t);
+      logTest('#1 Hoop heat', `${sc.total} / 100 (answer ${M.state.answer.toFixed(2)} m², actual ${M.state.hoopArea.toFixed(3)})`);
       pushEvent(`Score: ${sc.total} / 100`, 'good');
     }
     renderPilot();
@@ -1118,6 +1160,7 @@
 
   // events feed
   function pushEvent(msg, cls) {
+    if (heat && heat.running && heat.events) heat.events.push({ t: +heat.t.toFixed(1), msg: String(msg), cls: cls || '' });
     const f = $('#feed');
     const d = document.createElement('div'); d.textContent = msg; if (cls) d.className = cls;
     f.appendChild(d);
@@ -1147,11 +1190,12 @@
   function viewAllowed(v) {
     if (!M) return false;
     if (v === 'cam' || v === 'cam2') return M.rov.cameras.length > (v === 'cam2' ? 1 : 0);
+    if (M.def.views === 'cam' && M.rov.cameras.length) return false;
     if (v === 'chase') return !(M.def.views === 'heat' && heat && heat.running);
     return true;
   }
   function setView(v) {
-    if (!viewAllowed(v)) { toast(v === 'chase' ? 'During a heat the pilot sees only the ROV camera.' : 'This ROV has no camera there.'); return; }
+    if (!viewAllowed(v)) { toast(M.def.views === 'cam' ? 'This drill is camera only, like a real heat.' : v === 'chase' ? 'During a heat the pilot sees only the ROV camera.' : 'This ROV has no camera there.'); return; }
     if (v === 'deck' && view !== 'deck' && M.def.views === 'heat' && heat && heat.running) { heat.peeks++; pushEvent('Pilot looked at the pool: −20', 'bad'); beep('bad'); }
     if (v === 'cam2') { view = 'cam'; camIdx = 1; } else { if (v === 'cam') camIdx = 0; view = v; }
     camYaw = 0; camPitch = 0;
@@ -1167,7 +1211,7 @@
     const n = M ? M.rov.cameras.length : 0;
     const b = (v, label, extra) => `<button class="vbtn ${extra || ''}" data-v="${v}" aria-pressed="${(v === 'cam' && view === 'cam' && camIdx === 0) || (v === 'cam2' && view === 'cam' && camIdx === 1) || (v === view && v !== 'cam')}" ${viewAllowed(v) ? '' : 'disabled style="opacity:.4"'}>${label}</button>`;
     vb.innerHTML = (n ? b('cam', 'ROV camera') : '') + (n > 1 ? b('cam2', 'Camera 2') : '') + b('deck', 'Deck view', inHeat ? 'cost' : '') + (inHeat ? '' : b('chase', 'Chase')) +
-      `<button class="vbtn" data-v="map" aria-pressed="${opts.map}" title="Spotter map: what your teammates on the deck can see">Map</button>`;
+      (M.def.views === 'cam' ? '' : `<button class="vbtn" data-v="map" aria-pressed="${opts.map}" title="Spotter map: what your teammates on the deck can see">Map</button>`);
   }
   $('#vbtns').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
@@ -1275,8 +1319,20 @@
         Physics.step(M.rov, h, M.env);
         acc -= h;
       }
+      const hs = Math.hypot(M.rov.v.x, M.rov.v.z); if (hs > M.maxSpeed) M.maxSpeed = hs;
+      if (M.def.drill && !M.state.locked && !M.state.missing && !M.state.recorded) {
+        if (!M.state.started && (ctl.surge || ctl.sway || ctl.heave || ctl.yaw)) M.state.started = true;
+        if (M.state.started) M.state.t += dt;
+        if (M.state.done) finishDrill();
+      }
       if (heat && heat.running) {
         heat.t += dt;
+        heat.trackT += dt;
+        if (heat.track && heat.trackT >= 0.5) {
+          heat.trackT = 0;
+          const T = Physics.telemetry(M.rov);
+          heat.track.push([Math.round(heat.t * 10), Math.round(M.rov.p.x * 100), Math.round(M.rov.p.z * 100), Math.round(T.depth * 100), Math.round(T.heading)]);
+        }
         if (M.def.heats === 2 && heat.t >= 420 && !heat.bannerShown) {
           heat.bannerShown = true;
           showBanner('7:00 — switch pilots now. No one may pilot for more than half a heat.', 'Pilots switched', 'pilotSwitched');
@@ -1385,8 +1441,9 @@
     }
     // map
     const mp = $('#map');
-    mp.hidden = !opts.map;
-    if (opts.map) drawMap(mp);
+    const showMap = opts.map && M.def.views !== 'cam';
+    mp.hidden = !showMap;
+    if (showMap) drawMap(mp);
   }
 
   function drawMap(cv) {
@@ -1466,10 +1523,11 @@
   function missionTab() {
     const def = M.def;
     const ids = ['tank', 'practice', 'hoop', 'flag', 'carp', 'drag'];
-    const list = `<div class="mlist">${ids.map(id => { const d = MISSIONS[id]; return `<button class="mcard ${d.heats || id === 'drag' ? 'challenge' : ''}" data-mission="${id}" aria-pressed="${id === def.id}"><b>${esc(d.short)}</b><span>${id === 'tank' ? 'Check trim' : id === 'practice' ? 'All apparatus, no clock' : d.heatSec ? (d.heatSec / 60) + ' min × ' + d.heats + ' heat' + (d.heats > 1 ? 's' : '') : 'Bracket of 3 races'}</span></button>`; }).join('')}</div>`;
+    const list = drillListHtml() + `<span class="sec-label">Pool and challenges</span><div class="mlist">${ids.map(id => { const d = MISSIONS[id]; return `<button class="mcard ${d.heats || id === 'drag' ? 'challenge' : ''}" data-mission="${id}" aria-pressed="${id === def.id}"><b>${esc(d.short)}</b><span>${id === 'tank' ? 'Check trim' : id === 'practice' ? 'All apparatus, no clock' : d.heatSec ? (d.heatSec / 60) + ' min × ' + d.heats + ' heat' + (d.heats > 1 ? 's' : '') : 'Bracket of 3 races'}</span></button>`; }).join('')}</div>`;
     const { P, used } = heatState();
     let heatHtml = '';
-    if (def.heats) {
+    if (def.drill) heatHtml = `<div class="row"><button class="btn" data-act="drillAgain">Restart drill</button></div>`;
+    else if (def.heats) {
       if (heat && heat.running) {
         const canEnd = def.id !== 'hoop' && Missions.atStart(M) && heat.t > 5;
         heatHtml = `<div class="card"><div class="heatbox"><span class="pill run">Heat ${heat.n} running</span><span class="clock" id="clk">${mmss(heat.t)}</span><span class="note">/ ${mmss(heat.limit)}</span></div>
@@ -1495,7 +1553,7 @@
       <div class="sec"><b>${esc(def.title)}</b><p class="mdesc">${esc(def.desc)}</p>${def.rules ? `<details><summary>Rules and scoring from the parameters</summary><ul class="rules">${def.rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>` : ''}${sizeWarn}</div>
       ${heatHtml}
       <div class="row">${actions}${hasClaw ? '<button class="btn" data-act="claw">Claw open/close (G)</button>' : ''}${def.id !== 'tank' && def.id !== 'drag' ? `<button class="btn" data-act="diver">${heat && heat.running ? 'Diver assist (−20)' : 'Diver assist'}</button>` : ''}</div>
-      <div id="sheetBox">${sheetHtml(sc)}</div>
+      <div id="sheetBox">${def.drill ? drillSheet() : sheetHtml(sc)}</div>
       ${res}
       ${keysHtml()}`;
   }
@@ -1503,14 +1561,16 @@
   function resultsHtml(id) {
     const P = progress[id];
     if (!P) return '';
-    if (id === 'hoop' && P.score != null) return `<div class="sec"><span class="sec-label">Official result</span><ul class="results"><li><span>Answer ${P.answer.toFixed(2)} m² (known ${P.known.toFixed(4)})</span><b>${P.score} / 100</b></li></ul></div>`;
+    if (id === 'hoop' && P.score != null) return `<div class="sec"><span class="sec-label">Official result</span><ul class="results"><li><span>Answer ${P.answer.toFixed(2)} m² (known ${P.known.toFixed(4)})</span><b>${P.score} / 100</b></li></ul>${replayBtn('hoop', 1)}</div>`;
     if (id === 'drag' && P.runs) return `<div class="sec"><span class="sec-label">Best results</span><ul class="results"><li><span>Best time</span><b>${P.bestTime && P.bestTime < 900 ? P.bestTime.toFixed(2) + ' s' : '—'}</b></li><li><span>Rounds won</span><b>${P.rounds || 0} of 3</b></li></ul></div>`;
     if (P.heats && P.heats.length) {
       const best = Math.max(...P.heats.filter(Boolean).map(h => h.total));
-      return `<div class="sec"><span class="sec-label">Heats</span><ul class="results">${P.heats.map(h => h ? `<li><span>Heat ${h.n}: ${h.returned ? mmss(h.elapsed) : 'time ran out'}${h.complete ? ' · bonus eligible' : ''}</span><b>${h.total}</b></li>` : '').join('')}<li><span>Best of 2 heats (raw score)</span><b>${best}</b></li></ul></div>`;
+      return `<div class="sec"><span class="sec-label">Heats</span><ul class="results">${P.heats.map(h => h ? `<li><span>Heat ${h.n}: ${h.returned ? mmss(h.elapsed) : 'time ran out'}${h.complete ? ' · bonus eligible' : ''} ${replayBtn(id, h.n)}</span><b>${h.total}</b></li>` : '').join('')}<li><span>Best of 2 heats (raw score)</span><b>${best}</b></li></ul></div>`;
     }
     return '';
   }
+
+  function replayBtn(id, n) { return store.get('replays', {})[id + '-' + n] ? `<button class="linkbtn" data-act="replay:${id}:${n}">Watch replay</button>` : ''; }
 
   function keysHtml() {
     return `<details><summary>Keyboard, gamepad and touch controls</summary><div class="keys" style="margin-top:8px">
@@ -1542,7 +1602,7 @@
       <p class="note">Recorded 10 times a second while you drive. Try a speed test: drive straight for 5 seconds and read the top speed. Change one thing on the ROV and test again.</p>
       <div class="row">${Object.keys(recSeries).map(k => `<label class="chk"><input type="checkbox" data-rec value="${k}" ${recSeries[k] ? 'checked' : ''}> ${({ depth: 'depth (m)', speed: 'speed (m/s)', amps: 'current (A)', heading: 'heading (°)' })[k]}</label>`).join('')}</div>
       <canvas id="chart" width="800" height="340" aria-label="Graph of recorded values"></canvas><div class="legend" id="legend"></div>
-      <div class="row"><button class="btn small" data-act="recToggle">${recording ? 'Pause recording' : 'Resume recording'}</button><button class="btn small" data-act="recClear">Clear</button><button class="btn small" data-act="recCsv">Download CSV</button></div></div>`;
+      <div class="row"><button class="btn small" data-act="recToggle">${recording ? 'Pause recording' : 'Resume recording'}</button><button class="btn small" data-act="recClear">Clear</button><button class="btn small" data-act="recCsv">Download CSV</button><button class="btn small go" data-act="logRun">Save this run to the design log</button></div></div>`;
   }
 
   const SERIES_COL = { depth: '#1b7fd1', speed: '#2a8a3a', amps: '#d6332e', heading: '#a36a00' };
@@ -1593,6 +1653,9 @@
       const left = heat.limit - heat.t;
       co.classList.toggle('warn', left < 60);
       co.innerHTML = `${mmss(heat.t)}<small>Heat ${heat.n} · ${mmss(left)} left</small>`;
+    } else if (M.def.drill && !M.state.locked && !M.state.missing) {
+      co.hidden = false; co.classList.remove('warn');
+      co.innerHTML = `${mmss(M.state.t)}<small>${M.state.started ? esc(M.def.progress(M)) : 'clock starts when you move'}</small>`;
     } else if (M.def.id === 'drag' && M.state.phase && M.state.phase !== 'ready') {
       co.hidden = false; co.classList.remove('warn');
       co.innerHTML = M.state.phase === 'countdown' ? `${Math.ceil(M.state.cd)}<small>get ready</small>` : `${(M.state.t || 0).toFixed(2)} s<small>${DRAG_NAME()}</small>`;
@@ -1601,7 +1664,7 @@
       const clk = $('#clk'); if (clk && heat) clk.textContent = mmss(heat.t);
       const be = $('#btnEnd');
       if (be && heat) { const can = Missions.atStart(M) && heat.t > 5; be.disabled = !can; const n = $('#endNote'); if (n) n.textContent = can ? 'Tell the judge you are done.' : 'Bring the ROV back to the surface at the starting wall to stop the clock.'; }
-      const sb = $('#sheetBox'); if (sb) sb.innerHTML = sheetHtml(M.def.score(M));
+      const sb = $('#sheetBox'); if (sb) sb.innerHTML = M.def.drill ? drillSheet() : sheetHtml(M.def.score(M));
     } else if (pilotTab === 'controls') {
       r.thrusters.forEach(t => {
         const el = $('#sw-' + t.id); if (!el) return;
@@ -1632,6 +1695,194 @@
     }
   }
   const DRAG_NAME = () => (Missions.DRAG_ROUNDS[Math.min(M.state.round || 0, 2)] || {}).name || '';
+
+  /* ---------------- pilot training drills ---------------- */
+  const DRILL_IDS = Object.keys(Missions.DRILLS);
+  function drillUnlocked(n) { return n === 1 || ((progress.drills || {})['drill' + (n - 1)] || {}).stars >= 1; }
+  function drillMissing(def) {
+    const r = Physics.create(design);
+    if (def.needs === 'camera' && !r.cameras.length) return 'This drill needs a camera. Add one in Build, step 3.';
+    if (def.needs === 'grab' && !r.tools.some(t => t.type === 'prong' || t.type === 'claw')) return 'This drill needs a prong or a claw. Add one in Build, step 4.';
+    if (def.needs === 'tool' && !r.tools.some(t => t.type !== 'ruler')) return 'This drill needs a tool such as the spool fork, a prong or a claw. Add one in Build, step 4.';
+    return null;
+  }
+  const starStr = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+  function finishDrill() {
+    const def = M.def, s = M.state;
+    s.recorded = true;
+    const t = s.t, stars = t <= def.stars[0] ? 3 : t <= def.stars[1] ? 2 : 1;
+    const D = progress.drills = progress.drills || {};
+    const old = D[def.id] || {};
+    D[def.id] = { stars: Math.max(old.stars || 0, stars), best: Math.min(old.best || 9999, +t.toFixed(1)), runs: (old.runs || 0) + 1 };
+    saveProgress();
+    logTest(def.title, `${starStr(stars)} in ${mmss(t)}`);
+    beep('flag');
+    const next = MISSIONS['drill' + (def.drill + 1)];
+    modal(`${def.short} complete!`, `<p class="stars-big" aria-label="${stars} of 3 stars">${starStr(stars)}</p>
+      <p>Time: <b>${mmss(t)}</b>${old.best && old.best < 9999 ? ` · your best: ${mmss(Math.min(old.best, t))}` : ''}</p>
+      <p class="note">3 stars: under ${mmss(def.stars[0])} · 2 stars: under ${mmss(def.stars[1])} · 1 star: finish.</p>
+      ${next ? `<p>Next up: <b>${esc(next.title)}</b>.</p>` : '<p><b>You finished pilot training.</b> You are ready for the challenges. Try the practice pool, then run a heat.</p>'}`,
+      [{ label: 'Try again', run: () => loadMission(def.id) }, { label: next ? 'Next drill' : 'Go to the practice pool', cls: 'go', run: () => loadMission(next ? next.id : 'practice') }]);
+    renderPilot();
+  }
+  function drillSheet() {
+    const def = M.def, s = M.state, best = (progress.drills || {})[def.id];
+    if (s.locked) return `<div class="card"><b>Locked</b><p class="note">Finish ${esc(MISSIONS['drill' + (def.drill - 1)].title)} first.</p></div>`;
+    if (s.missing) return `<div class="card"><b>Can’t start yet</b><p class="note">${esc(s.missing)}</p><button class="btn small" data-act="goBuild">Go to Build</button></div>`;
+    return `<div class="sheet"><h4>${esc(def.title)}<span>${mmss(s.t)}</span></h4><table>
+      <tr><td>Goal</td><td class="n">${esc(def.progress(M))}</td></tr>
+      <tr><td>Stars</td><td class="n">★★★ under ${mmss(def.stars[0])} · ★★ under ${mmss(def.stars[1])}</td></tr>
+      <tr><td>Your best</td><td class="n">${best ? starStr(best.stars) + ' ' + mmss(best.best) : '—'}</td></tr></table></div>`;
+  }
+  function drillListHtml() {
+    const D = progress.drills || {};
+    const total = DRILL_IDS.reduce((a, id) => a + ((D[id] || {}).stars || 0), 0);
+    return `<div class="sec"><span class="sec-label">Pilot training · ${total} of ${DRILL_IDS.length * 3} stars</span><div class="drills">${DRILL_IDS.map(id => {
+      const d = MISSIONS[id], got = (D[id] || {}).stars || 0, open = drillUnlocked(d.drill);
+      return `<button class="dcard" data-mission="${id}" aria-pressed="${M.def.id === id}" ${open ? '' : 'disabled'} title="${esc(d.title)}"><b>${d.drill}</b><span>${esc(d.short)}</span><em>${open ? starStr(got) : 'locked'}</em></button>`;
+    }).join('')}</div></div>`;
+  }
+
+  /* ---------------- heat replay ---------------- */
+  function saveReplay(id, h, total, elapsed) {
+    if (!h || !h.track) return;
+    const R = store.get('replays', {});
+    R[id + '-' + h.n] = { mission: id, n: h.n, pool: M.def.pool, start: M.def.start, items: h.items, track: h.track, events: h.events, total, elapsed, at: new Date().toISOString(), title: M.def.title };
+    store.set('replays', R);
+  }
+  let replayTimer = null;
+  function openReplay(id, n) {
+    const rec = store.get('replays', {})[id + '-' + n];
+    if (!rec || !rec.track || rec.track.length < 2) { toast('No replay saved for that heat.'); return; }
+    const pool = Missions.POOLS[rec.pool];
+    const st = Extras.replayStats(rec);
+    const dur = st.dur;
+    modal(`Replay: ${rec.title.split(': ')[1] || rec.title}, heat ${rec.n}`, `
+      <div class="replay">
+        <canvas id="rpMap" width="440" height="560" aria-label="Top view of the ROV's path"></canvas>
+        <div class="rp-side">
+          <div class="row"><button class="btn small go" id="rpPlay">▶ Play</button><select class="inp" id="rpSpeed"><option value="4">4×</option><option value="10" selected>10×</option><option value="30">30×</option></select><span class="clock" id="rpClock">00:00</span></div>
+          <input type="range" id="rpScrub" min="0" max="${dur.toFixed(1)}" step="0.5" value="${dur.toFixed(1)}" aria-label="Replay time">
+          <canvas id="rpDepth" width="440" height="70" aria-label="Depth over time"></canvas>
+          <span class="note">Depth over time (top = surface). Ticks mark events.</span>
+          <dl class="kv"><dt>Score</dt><dd>${rec.total ?? '—'}</dd><dt>Elapsed</dt><dd>${mmss(dur)}</dd><dt>Distance driven</dt><dd>${st.dist.toFixed(1)} m</dd><dt>Average speed</dt><dd>${st.avg.toFixed(2)} m/s</dd>
+            <dt>Time under water</dt><dd>${Math.round(st.under / Math.max(1, dur) * 100)}%</dd><dt>First points at</dt><dd>${st.firstScore != null ? mmss(st.firstScore) : '—'}</dd><dt>Longest time with no points</dt><dd>${mmss(st.longestGap)}</dd></dl>
+          <ol class="rp-events">${rec.events.map((e, i) => `<li data-t="${e.t}" class="${e.cls}"><b>${i + 1}</b> <span>${mmss(e.t)}</span> ${esc(e.msg)}</li>`).join('') || '<li>No events.</li>'}</ol>
+        </div></div>
+      <p class="note">Blue path = early in the heat, orange = late. Thick line = under water, thin = at the surface. Ask: where did we lose time? What would we do differently next heat?</p>`,
+      [{ label: 'Close', run: () => { clearInterval(replayTimer); } }], true);
+    const map = $('#rpMap'), depth = $('#rpDepth'), scrub = $('#rpScrub'), clock = $('#rpClock'), play = $('#rpPlay');
+    const draw = () => { const t = +scrub.value; Extras.drawReplay(map, rec, pool, t); Extras.drawDepthStrip(depth, rec, t); clock.textContent = mmss(t); };
+    scrub.addEventListener('input', draw);
+    $('#mBody').querySelectorAll('.rp-events li[data-t]').forEach(li => li.addEventListener('click', () => { scrub.value = li.dataset.t; draw(); }));
+    play.addEventListener('click', () => {
+      if (replayTimer) { clearInterval(replayTimer); replayTimer = null; play.textContent = '▶ Play'; return; }
+      if (+scrub.value >= dur) scrub.value = 0;
+      play.textContent = '❚❚ Pause';
+      replayTimer = setInterval(() => {
+        const v = Math.min(dur, +scrub.value + 0.1 * +$('#rpSpeed').value);
+        scrub.value = v; draw();
+        if (v >= dur) { clearInterval(replayTimer); replayTimer = null; play.textContent = '▶ Play'; }
+      }, 100);
+    });
+    draw();
+  }
+
+  /* ---------------- design log (engineering journal) ---------------- */
+  let journal = store.get('journal', { versions: [] });
+  function saveJournal() { store.set('journal', journal); }
+  function currentVersion(create) {
+    const h = Extras.designHash(design);
+    let v = journal.versions.find(x => x.hash === h);
+    if (!v && create) {
+      const prev = journal.versions[journal.versions.length - 1];
+      v = { v: journal.versions.length + 1, at: new Date().toISOString(), hash: h, design: Design.clone(design), stats: Extras.designStats(design), changes: Extras.changeSummary(prev && prev.design, design), tests: [], note: '' };
+      journal.versions.push(v);
+      if (journal.versions.length > 40) journal.versions.shift();
+    }
+    return v;
+  }
+  function logTest(label, result) {
+    const fresh = !journal.versions.find(x => x.hash === Extras.designHash(design));
+    const v = currentVersion(true);
+    v.tests.push({ at: new Date().toISOString(), label, result, topSpeed: M && M.maxSpeed ? +M.maxSpeed.toFixed(2) : null });
+    saveJournal();
+    if (fresh) setTimeout(() => toast(`Saved to your design log as version ${v.v}.`), 1200);
+  }
+  function logRun() {
+    if (!M) return;
+    const maxD = samples.length ? Math.max(...samples.map(s => s.depth)) : 0;
+    const maxA = samples.length ? Math.max(...samples.map(s => s.amps)) : 0;
+    logTest(`${M.def.short} run`, `top speed ${(M.maxSpeed || 0).toFixed(2)} m/s, deepest ${(maxD / 0.3048).toFixed(1)} ft, peak current ${maxA.toFixed(1)} A`);
+    toast('Saved this run to your design log.');
+  }
+
+  function openJournal() { $('#journal').hidden = false; renderJournal(); }
+  let jCompare = [];
+  function renderJournal() {
+    const vs = journal.versions.slice().reverse();
+    const cmp = jCompare.map(n => journal.versions.find(v => v.v === n)).filter(Boolean);
+    let cmpHtml = '';
+    if (cmp.length === 2) {
+      const [a, b] = cmp.sort((x, y) => x.v - y.v);
+      const best = v => v.tests.length ? v.tests.map(t => `${t.label}: ${t.result}`).join('<br>') : '—';
+      const row = (label, fa, fb, unit, better) => {
+        const d = typeof fa === 'number' && typeof fb === 'number' ? fb - fa : null;
+        const cls = d == null || !d || !better ? '' : (better === 'low' ? d < 0 : d > 0) ? 'up' : 'down';
+        const f = v => v == null ? '—' : unit === '$' ? fmt$(v) : v + unit;
+        const fd = unit === '$' ? (d > 0 ? '+' : '−') + fmt$(Math.abs(d)) : (d > 0 ? '+' : '') + (Math.round(d * 100) / 100) + unit;
+        return `<tr><td>${label}</td><td class="n">${f(fa)}</td><td class="n">${f(fb)}</td><td class="n ${cls}">${d ? fd : ''}</td></tr>`;
+      };
+      const ts = v => Math.max(0, ...v.tests.map(t => t.topSpeed || 0)) || null;
+      cmpHtml = `<div class="card"><div class="row between"><b>Comparing v${a.v} and v${b.v}</b><button class="btn small" data-j="clearcmp">Clear</button></div>
+        <p class="note">What changed: ${b.changes.map(esc).join(' · ')}</p>
+        <div class="tbl-wrap"><table class="tbl"><thead><tr><th></th><th class="n">v${a.v}</th><th class="n">v${b.v}</th><th class="n">Change</th></tr></thead><tbody>
+        ${row('Cost', a.stats.cost, b.stats.cost, '$', 'low')}${row('Buoyancy', a.stats.net, b.stats.net, ' g')}${row('Mass', a.stats.mass, b.stats.mass, ' g', 'low')}${row('Motors', a.stats.motors, b.stats.motors, '')}${row('Full-power current', a.stats.amps, b.stats.amps, ' A', 'low')}${row('Top speed seen', ts(a), ts(b), ' m/s', 'high')}
+        <tr><td>Tests</td><td>${best(a)}</td><td>${best(b)}</td><td></td></tr></tbody></table></div></div>`;
+    } else if (journal.versions.length > 1) cmpHtml = `<p class="note">Tick <b>Compare</b> on two versions to see them side by side.</p>`;
+    $('#jBody').innerHTML = (vs.length ? '' : `<div class="card"><b>No versions yet</b><p class="note">Every time you test your ROV (a drill, a heat, a drag race, or “Save this run” on the Data tab), the simulator saves a snapshot of the design and the result here. Change one thing at a time, test again, and you have a design spiral for your engineering journal.</p></div>`) + cmpHtml +
+      vs.map(v => `<article class="jcard">
+        <div class="row between"><h3>Version ${v.v} <small>${new Date(v.at).toLocaleString()}</small></h3>
+          <span class="row"><label class="chk"><input type="checkbox" data-jcmp="${v.v}" ${jCompare.includes(v.v) ? 'checked' : ''}> Compare</label><button class="btn small" data-jload="${v.v}">Load this design</button></span></div>
+        <div class="chipsrow">${v.changes.map(c => `<span class="pill">${esc(c)}</span>`).join('')}</div>
+        <dl class="kv jstats"><dt>Cost</dt><dd>${fmt$(v.stats.cost)}</dd><dt>Buoyancy</dt><dd>${v.stats.net >= 0 ? '+' : ''}${v.stats.net} g</dd><dt>Motors</dt><dd>${v.stats.motors} (${v.stats.amps} A)</dd><dt>Size</dt><dd>${v.stats.size.join(' × ')} in</dd><dt>Tools</dt><dd>${esc(v.stats.tools.join(', ') || 'none')}</dd></dl>
+        ${v.tests.length ? `<ul class="results">${v.tests.map(t => `<li><span>${esc(t.label)}${t.topSpeed ? ` <small class="note">· top speed ${t.topSpeed.toFixed(2)} m/s</small>` : ''}</span><b>${esc(t.result)}</b></li>`).join('')}</ul>` : '<p class="note">No tests on this version.</p>'}
+        <label class="note">What we changed, why, and what we learned<textarea class="inp jnote" data-jnote="${v.v}" rows="3" placeholder="Example: We moved the motors back 3 inches because the ROV tipped nose-up when driving. It now drives level and is 0.05 m/s faster.">${esc(v.note)}</textarea></label>
+      </article>`).join('');
+  }
+  $('#journal').addEventListener('click', e => {
+    const t = e.target;
+    if (t.id === 'jClose') { $('#journal').hidden = true; return; }
+    if (t.id === 'jExport') { if (!journal.versions.length) return toast('Test your ROV first to start the log.'); return saveFile(slug($('#rovName').value) + '-design-log.html', Extras.journalHtml(journal, $('#teamName').value.trim(), $('#rovName').value)); }
+    if (t.dataset.j === 'clearcmp') { jCompare = []; return renderJournal(); }
+    if (t.dataset.jload) {
+      const v = journal.versions.find(x => x.v === +t.dataset.jload);
+      modal(`Load version ${v.v}?`, '<p>This replaces the ROV you are building now with this saved version. You can undo with ↶ in Build.</p>', [{ label: 'Cancel' }, { label: 'Load it', cls: 'go', run: () => { commit(); design = Design.validate(v.design) || design; $('#rovName').value = design.name; sel = null; changed(); fitBuilder(); $('#journal').hidden = true; setMode('build'); toast(`Loaded version ${v.v}.`); } }]);
+    }
+  });
+  $('#journal').addEventListener('change', e => {
+    const t = e.target;
+    if (t.dataset.jcmp) { const n = +t.dataset.jcmp; jCompare = t.checked ? jCompare.concat(n).slice(-2) : jCompare.filter(x => x !== n); renderJournal(); }
+  });
+  $('#journal').addEventListener('input', e => {
+    const t = e.target;
+    if (t.dataset.jnote) { const v = journal.versions.find(x => x.v === +t.dataset.jnote); if (v) { v.note = t.value.slice(0, 2000); saveJournal(); } }
+  });
+  $('#btnJournal').onclick = openJournal;
+
+  function setJunior(on) {
+    opts.junior = on; store.set('opts', opts);
+    if (on) {
+      commit();
+      design.elec = Object.assign({}, U.DEFAULT_ELECTRICAL);
+      design.sealed = false;
+      store.set('design', design);
+      if (buildStep === 'power') buildStep = 'check';
+    }
+    pilotDirty = true;
+    rebuildBuilder(); renderSide();
+    toast(on ? 'Junior mode on: simpler steps, standard wiring, and the fuse can’t blow.' : 'Junior mode off: every step and rule is back.');
+  }
 
   /* ---------------- mode switching ---------------- */
   function setMode(m) {
@@ -1668,11 +1919,14 @@
       <button data-m="open">Open a design file…</button>
       <button data-m="save">Save design file</button>
       <button data-m="budget">Download budget (CSV)</button>
+      <button data-m="shop">Download the shop sheet</button>
+      <button data-m="log">Design log…</button>
       <div class="menu-sep"></div><div class="menu-label">Options</div>
       <label class="chk"><input type="checkbox" data-o="sound" ${opts.sound ? 'checked' : ''}> Sound</label>
       <label class="chk"><input type="checkbox" data-o="murky" ${opts.murky ? 'checked' : ''}> Murky water (harder to see)</label>
       <label class="chk"><input type="checkbox" data-o="touch" ${opts.touch ? 'checked' : ''}> On-screen touch controls</label>
       <label class="chk"><input type="checkbox" data-o="balance" ${opts.balance ? 'checked' : ''}> Show center of mass and buoyancy</label>
+      <label class="chk"><input type="checkbox" id="optJunior" ${opts.junior ? 'checked' : ''}> Junior mode (grades 3–6)</label>
       <label class="chk"><input type="checkbox" id="optDark" ${isDark() ? 'checked' : ''}> Dark theme</label>
       <div class="menu-sep"></div><div class="menu-label">Teacher</div>
       <button data-m="teacher">Check student work…</button>
@@ -1690,6 +1944,7 @@
   $('#menuPop').addEventListener('change', e => {
     const t = e.target;
     if (t.dataset.o) { opts[t.dataset.o] = t.checked; store.set('opts', opts); if (t.dataset.o === 'balance') rebuildBuilder(); if (t.dataset.o === 'touch') $('#touch').hidden = !(mode === 'pilot' && opts.touch); }
+    if (t.id === 'optJunior') { $('#menuPop').hidden = true; setJunior(t.checked); return; }
     if (t.id === 'optDark') { document.documentElement.dataset.theme = t.checked ? 'dark' : 'light'; store.set('theme', document.documentElement.dataset.theme); buildGrid(); }
   });
   $('#menuPop').addEventListener('click', e => {
@@ -1699,6 +1954,8 @@
     if (m === 'open') $('#openFile').click();
     if (m === 'save') saveFile(slug($('#rovName').value) + '.rov.json', JSON.stringify(Object.assign({ app: 'uivd-rov-lab' }, design), null, 1));
     if (m === 'budget') budgetCsv();
+    if (m === 'shop') act('shopSheet');
+    if (m === 'log') openJournal();
     if (m === 'teacher') openTeacher();
     if (m === 'welcome') welcome();
     if (m === 'clear') modal('Clear all your heat scores?', '<p>Your ROV design stays. Only challenge scores are cleared.</p>', [{ label: 'Cancel' }, { label: 'Clear scores', cls: 'stop', run: () => { progress = {}; saveProgress(); renderSide(); } }]);
@@ -1731,10 +1988,13 @@
         <tr><td>#1 Hoop</td><td>${P.hoop && P.hoop.score != null ? P.hoop.score + ' / 100' : 'not done'}</td></tr>
         <tr><td>#2 Flag (best raw)</td><td>${bestOf('flag') ?? 'not done'}</td></tr>
         <tr><td>#3 Carp (best raw)</td><td>${bestOf('carp') ?? 'not done'}</td></tr>
+        <tr><td>Pilot training</td><td>${Object.values(P.drills || {}).reduce((a, d) => a + (d.stars || 0), 0)} of 18 stars</td></tr>
+        <tr><td>Design log</td><td>${journal.versions.length} versions, ${journal.versions.reduce((a, v) => a + v.tests.length, 0)} tests</td></tr>
         <tr><td>#4 Drag race</td><td>${P.drag && P.drag.bestTime < 900 ? P.drag.bestTime.toFixed(2) + ' s, ' + (P.drag.rounds || 0) + ' rounds won' : 'not done'}</td></tr>
       </tbody></table></div>`, [{ label: 'Cancel' }, {
         label: 'Save turn-in file', cls: 'go', run: () => {
-          const out = { app: 'uivd-rov-lab', kind: 'turn-in', v: 1, team, rov: $('#rovName').value, at: new Date().toISOString(), design, budget: { total: ins.budget.total, byLine: ins.budget.byLine }, inspection: { ok: ins.ok, fails: ins.items.filter(i => !i.pass && i.kind !== 'warn').map(i => i.id) }, trim: { net: Math.round(mp.net), pitch: mp.pitch, roll: mp.roll, mass: Math.round(mp.M) }, progress };
+          const out = { app: 'uivd-rov-lab', kind: 'turn-in', v: 1, team, rov: $('#rovName').value, at: new Date().toISOString(), design, budget: { total: ins.budget.total, byLine: ins.budget.byLine }, inspection: { ok: ins.ok, fails: ins.items.filter(i => !i.pass && i.kind !== 'warn').map(i => i.id) }, trim: { net: Math.round(mp.net), pitch: mp.pitch, roll: mp.roll, mass: Math.round(mp.M) }, progress, junior: !!opts.junior,
+            journal: journal.versions.map(v => ({ v: v.v, at: v.at, changes: v.changes, stats: v.stats, tests: v.tests, note: v.note })) };
           saveFile(slug(team || 'team') + '-' + slug($('#rovName').value) + '-turn-in.json', JSON.stringify(out, null, 1));
         }
       }]);
@@ -1771,7 +2031,9 @@
         budget: num(o.budget && o.budget.total), insp: o.inspection && o.inspection.ok, fails: (o.inspection && Array.isArray(o.inspection.fails) ? o.inspection.fails : []).slice(0, 12).map(String),
         hoop: P.hoop && num(P.hoop.score), hoopAns: P.hoop && num(P.hoop.answer), hoopKnown: P.hoop && num(P.hoop.known),
         flag: best('flag'), flagFast: fastest('flag'), carp: best('carp'), carpFast: fastest('carp'),
-        drag: P.drag && num(P.drag.bestTime) < 900 ? num(P.drag.bestTime) : null, dragRounds: P.drag ? num(P.drag.rounds) || 0 : 0
+        drag: P.drag && num(P.drag.bestTime) < 900 ? num(P.drag.bestTime) : null, dragRounds: P.drag ? num(P.drag.rounds) || 0 : 0,
+        stars: P.drills && typeof P.drills === 'object' ? Object.values(P.drills).reduce((a, d) => a + (num(d && d.stars) || 0), 0) : 0,
+        logV: Array.isArray(o.journal) ? o.journal.length : 0, logT: Array.isArray(o.journal) ? o.journal.reduce((a, v) => a + (Array.isArray(v && v.tests) ? v.tests.length : 0), 0) : 0, junior: !!o.junior
       };
     });
     // time bonus: 25 / 15 / 5 for the three fastest complete heats under 15 minutes
@@ -1793,21 +2055,21 @@
     const rows = teacherRows();
     const dupes = {};
     tFiles.forEach(f => { const k = JSON.stringify(f.o.design && f.o.design.pipes); dupes[k] = (dupes[k] || 0) + 1; });
-    $('#tBody').innerHTML = rows.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Rank</th><th>Team</th><th>ROV</th><th class="n">Budget</th><th>Inspection</th><th class="n">#1 Hoop</th><th class="n">#2 raw</th><th class="n">#2 bonus</th><th class="n">#2 norm.</th><th class="n">#3 raw</th><th class="n">#3 bonus</th><th class="n">#3 norm.</th><th class="n">Overall / 300</th><th class="n">Drag race</th></tr></thead><tbody>
-      ${rows.map((r, i) => `<tr><td class="n">${i + 1}</td><td>${esc(r.team || '(no name)')}<br><span class="note">${esc(r.name)}</span></td><td>${esc(r.rov)}</td><td class="n">${r.budget != null ? fmt$(r.budget) : '—'}${r.budget > 2000 ? ' <span class="pill fail">over</span>' : ''}</td>
+    $('#tBody').innerHTML = rows.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Rank</th><th>Team</th><th>ROV</th><th class="n">Budget</th><th>Inspection</th><th class="n">#1 Hoop</th><th class="n">#2 raw</th><th class="n">#2 bonus</th><th class="n">#2 norm.</th><th class="n">#3 raw</th><th class="n">#3 bonus</th><th class="n">#3 norm.</th><th class="n">Overall / 300</th><th class="n">Drag race</th><th class="n">Training</th><th class="n">Design log</th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr><td class="n">${i + 1}</td><td>${esc(r.team || '(no name)')}${r.junior ? ' <span class="pill">Junior</span>' : ''}<br><span class="note">${esc(r.name)}</span></td><td>${esc(r.rov)}</td><td class="n">${r.budget != null ? fmt$(r.budget) : '—'}${r.budget > 2000 ? ' <span class="pill fail">over</span>' : ''}</td>
         <td>${r.insp ? '<span class="pill pass">Pass</span>' : `<span class="pill fail">Fix ${esc(r.fails.join(', '))}</span>`}</td>
         <td class="n">${r.hoop != null ? r.hoop.toFixed(1) : '—'}${r.hoopAns != null ? `<br><span class="note">${r.hoopAns.toFixed(2)} vs ${r.hoopKnown != null ? r.hoopKnown.toFixed(3) : '?'} m²</span>` : ''}</td>
         <td class="n">${r.flag ?? '—'}${r.flagFast ? `<br><span class="note">${mmss(r.flagFast.elapsed)}</span>` : ''}</td><td class="n">${r.flagBonus || ''}</td><td class="n">${r.flagNorm ?? '—'}</td>
         <td class="n">${r.carp ?? '—'}${r.carpFast ? `<br><span class="note">${mmss(r.carpFast.elapsed)}</span>` : ''}</td><td class="n">${r.carpBonus || ''}</td><td class="n">${r.carpNorm ?? '—'}</td>
-        <td class="n"><b>${r.overall.toFixed(1)}</b></td><td class="n">${r.drag != null ? r.drag.toFixed(2) + ' s' : '—'}<br><span class="note">${r.dragRounds} won</span></td></tr>`).join('')}
+        <td class="n"><b>${r.overall.toFixed(1)}</b></td><td class="n">${r.drag != null ? r.drag.toFixed(2) + ' s' : '—'}<br><span class="note">${r.dragRounds} won</span></td><td class="n">${r.stars} / 18 ★</td><td class="n">${r.logV} versions<br><span class="note">${r.logT} tests</span></td></tr>`).join('')}
       </tbody></table></div>${Object.values(dupes).some(n => n > 1) ? '<p class="note" style="color:var(--warn)">Two or more files have exactly the same frame. Check that teams built their own ROVs.</p>' : ''}` : '<p class="note">No files yet.</p>';
   }
   $('#tExport').onclick = () => {
     const rows = teacherRows();
     if (!rows.length) { toast('Add turn-in files first.'); return; }
     const q = s => '"' + String(s ?? '').replace(/"/g, '""') + '"';
-    const head = ['rank', 'team', 'rov', 'budget', 'inspection', 'hoop_score', 'hoop_answer_m2', 'hoop_known_m2', 'flag_best_raw', 'flag_bonus', 'flag_normalized', 'carp_best_raw', 'carp_bonus', 'carp_normalized', 'overall_300', 'drag_best_s', 'drag_rounds_won'];
-    const lines = [head.join(',')].concat(rows.map((r, i) => [i + 1, r.team, r.rov, r.budget, r.insp ? 'pass' : 'fix ' + r.fails.join(' '), r.hoop, r.hoopAns, r.hoopKnown, r.flag, r.flagBonus, r.flagNorm, r.carp, r.carpBonus, r.carpNorm, r.overall, r.drag, r.dragRounds].map(q).join(',')));
+    const head = ['rank', 'team', 'rov', 'budget', 'inspection', 'hoop_score', 'hoop_answer_m2', 'hoop_known_m2', 'flag_best_raw', 'flag_bonus', 'flag_normalized', 'carp_best_raw', 'carp_bonus', 'carp_normalized', 'overall_300', 'drag_best_s', 'drag_rounds_won', 'training_stars', 'log_versions', 'log_tests', 'junior'];
+    const lines = [head.join(',')].concat(rows.map((r, i) => [i + 1, r.team, r.rov, r.budget, r.insp ? 'pass' : 'fix ' + r.fails.join(' '), r.hoop, r.hoopAns, r.hoopKnown, r.flag, r.flagBonus, r.flagNorm, r.carp, r.carpBonus, r.carpNorm, r.overall, r.drag, r.dragRounds, r.stars, r.logV, r.logT, r.junior ? 'yes' : 'no'].map(q).join(',')));
     saveFile('uivd-class-results.csv', lines.join('\n'));
   };
 
@@ -1846,14 +2108,19 @@
     modal('Welcome to the Underwater IVD ROV Lab', `
       <p>Design, build and test a virtual ROV for the 2026–27 Square One Underwater IVD competition.</p>
       <ol>
-        <li><b>Build.</b> Grow a ½" PVC frame from joints, then add bilge pump thrusters, a fishing camera, pool noodles, ballast and tools. The cost, buoyancy and balance update as you go.</li>
-        <li><b>Inspect.</b> Pick your battery, fuse, connectors and wire on the Power tab. The Inspect tab runs the 2027 inspection form and the $2,000 budget check.</li>
-        <li><b>Test.</b> Trim it in the test tank, then try the practice pool.</li>
-        <li><b>Compete.</b> Run official heats of the Hula Hoop Hustle, the All Clear Flag, Carp Diem and the Drag Race. During a heat the pilot sees only the ROV camera.</li>
-        <li><b>Turn in.</b> Save one file with your design, budget and scores for your teacher.</li>
+        <li><b>Build</b> your ROV step by step: frame, motors, camera, tools, trim${opts.junior ? '' : ', power'} and a final check.</li>
+        <li><b>Train</b> as a pilot with six short drills. Earn up to 3 stars on each.</li>
+        <li><b>Compete</b> in heats of the Hula Hoop Hustle, the All Clear Flag, Carp Diem and the Drag Race, then watch the replay.</li>
+        <li><b>Keep a design log.</b> Every test is saved with your design, so you can compare versions for your engineering journal.</li>
+        <li><b>Build the real one</b> with the printable shop sheet, and <b>turn in</b> one file for your teacher.</li>
       </ol>
+      <div class="card"><b>Which version fits your team?</b>
+        <div class="row"><button class="btn ${opts.junior ? 'go' : ''}" id="wJunior">Grades 3–6: Junior mode</button><button class="btn ${opts.junior ? '' : 'go'}" id="wFull">Grades 7–12: Full mode</button></div>
+        <p class="note">Junior mode uses simpler steps and words, skips the wiring step, and the fuse can’t blow. You can switch any time in the Menu.</p></div>
       <p class="note">The physics are simplified. Real motors, pools and batteries vary, so test your real ROV too.</p>`,
       [{ label: 'Start building', cls: 'go', run: () => store.set('welcomed', true) }]);
+    $('#wJunior').onclick = () => { if (!opts.junior) setJunior(true); $('#wJunior').classList.add('go'); $('#wFull').classList.remove('go'); };
+    $('#wFull').onclick = () => { if (opts.junior) setJunior(false); $('#wFull').classList.add('go'); $('#wJunior').classList.remove('go'); };
   }
 
   /* ---------------- splitter ---------------- */

@@ -268,7 +268,7 @@ details summary { cursor: pointer; font-size: 12.5px; color: var(--accent); font
 
 /* guided build steps */
 .sum { grid-template-columns: repeat(4, 1fr); }
-.stat b { font-size: 14px; }
+.stat b { font-size: 13.5px; }
 .stepper { list-style: none; margin: 0; padding: 0 0 8px; display: flex; flex-wrap: wrap; gap: 4px; }
 .stepper li { flex: none; }
 .stepper button { border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); border-radius: 999px; padding: 3px 9px 3px 3px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; white-space: nowrap; }
@@ -307,6 +307,33 @@ details.card > summary { font-size: 13.5px; }
 .piplabel { pointer-events: none; text-align: center; font-size: 11.5px; color: #eaf4f6; background: rgba(6,24,30,.8); border-radius: 6px 6px 0 0; padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 480px) { .sum { grid-template-columns: repeat(2, 1fr); } }
 
+/* drills, replay, design log */
+.drills { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.dcard { border: 1px solid var(--line); background: var(--panel-2); border-radius: 8px; padding: 6px 2px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; }
+.dcard b { font-size: 15px; } .dcard span { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.dcard em { font-style: normal; font-size: 11px; color: var(--amber); letter-spacing: 1px; }
+.dcard[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.dcard:disabled { opacity: .45; cursor: default; }
+.stars-big { font-size: 40px; color: var(--amber); margin: 0; letter-spacing: 4px; text-align: center; }
+.linkbtn { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0 0 0 6px; font-size: 12px; text-decoration: underline; }
+.replay { display: grid; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.replay canvas { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); display: block; }
+.rp-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.rp-side input[type=range] { width: 100%; accent-color: var(--accent); }
+.rp-events { list-style: none; margin: 0; padding: 0; max-height: 210px; overflow: auto; font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; }
+.rp-events li { padding: 3px 6px; border-radius: 6px; cursor: pointer; display: flex; gap: 6px; }
+.rp-events li:hover { background: var(--chip); }
+.rp-events li b { min-width: 18px; text-align: center; border-radius: 50%; background: var(--muted); color: #fff; font-size: 10.5px; height: 18px; line-height: 18px; }
+.rp-events li.good b { background: var(--good); } .rp-events li.bad b { background: var(--warn); }
+.rp-events li span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.jcard { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.jcard h3 { margin: 0; font-size: 16px; } .jcard h3 small { font-weight: 400; color: var(--muted); font-size: 12px; }
+.chipsrow { display: flex; flex-wrap: wrap; gap: 4px; }
+.jstats { grid-template-columns: repeat(auto-fill, minmax(90px, auto) minmax(80px, 1fr)); }
+.jnote { width: 100%; margin-top: 4px; font-family: var(--font-ui); font-size: 13px; resize: vertical; }
+.tbl td.up { color: var(--good); font-weight: 600; } .tbl td.down { color: var(--warn); font-weight: 600; }
+@media (max-width: 700px) { .replay { grid-template-columns: 1fr; } .drills { grid-template-columns: repeat(3, 1fr); } }
+
 @media (max-width: 900px) {
   body { overflow: auto; }
   #app { height: auto; min-height: 100%; }
@@ -337,6 +364,7 @@ details.card > summary { font-size: 13.5px; }
     <div class="tools">
       <input type="text" id="teamName" aria-label="Team number and names" placeholder="Team # and names">
       <input type="text" id="rovName" aria-label="ROV name" value="Starter ROV">
+      <button class="hbtn" id="btnJournal">Design log</button>
       <button class="hbtn" id="btnGuide">Engineering guide</button>
       <button class="hbtn primary" id="btnTurnIn">Turn in</button>
       <div class="popwrap">
@@ -388,6 +416,17 @@ details.card > summary { font-size: 13.5px; }
   <div id="tBody"></div>
 </section>
 
+ <section class="teacher" id="journal" hidden aria-label="Design log">
+  <div class="thead">
+    <h2>Design log</h2>
+    <button class="btn go" id="jExport">Download journal page</button>
+    <span class="spacer"></span>
+    <button class="btn" id="jClose">Close</button>
+  </div>
+  <p class="note">Your design spiral: each version of your ROV, what changed, and how it tested. Add notes about why you made each change and what you learned. Judges look for this kind of evidence for the Innovative Engineering Award.</p>
+  <div id="jBody" style="display:flex;flex-direction:column;gap:12px;max-width:900px"></div>
+</section>
+
 <input type="file" id="openFile" accept=".json,application/json" hidden>
 
 <div class="modal" id="modal" hidden>
@@ -400,11 +439,12 @@ details.card > summary { font-size: 13.5px; }
 
 <script src="vendor/three.min.js"></script>
 <script src="js/parts.js?v=1"></script>
-<script src="js/design.js?v=1"></script>
+<script src="js/design.js?v=2"></script>
 <script src="js/physics.js?v=1"></script>
-<script src="js/world.js?v=1"></script>
-<script src="js/missions.js?v=1"></script>
-<script src="js/app.js?v=1"></script>
+<script src="js/world.js?v=2"></script>
+<script src="js/missions.js?v=2"></script>
+<script src="js/extras.js?v=2"></script>
+<script src="js/app.js?v=2"></script>
 
 </body>
 </html>

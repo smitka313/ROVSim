@@ -38,7 +38,8 @@
   }
 
   /* ---------- rings and the tip-up (Challenge #2) ---------- */
-  function setupFlag(M, origin, ringArea) {
+  function setupFlag(M, origin, ringArea, count) {
+    if (count == null) count = 10;
     const tip = World.tipUpMesh();
     tip.position.copy(origin);
     M.scene.add(tip);
@@ -59,7 +60,7 @@
     capsulesFromMesh(ob, s.spoolTop, s.spoolBot, 0.006);
     // 10 standard 6" diving rings on the floor
     s.rings = [];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < count; i++) {
       let x, z, ok = false, tries = 0;
       while (!ok && tries++ < 200) {
         x = rand(ringArea.x0, ringArea.x1); z = rand(ringArea.z0, ringArea.z1);
@@ -514,6 +515,128 @@
     }
   };
 
+  /* ---------- pilot training drills ---------- */
+  function gateMesh(color) {
+    const g = new THREE.Group(), m = World.mat('gate' + color, color, { roughness: 0.5 });
+    const w = 0.45, top = -0.15, bot = -1.0;
+    g.add(World.rod(V3(-w, top, 0), V3(-w, bot, 0), 0.02, m), World.rod(V3(w, top, 0), V3(w, bot, 0), 0.02, m));
+    g.add(World.rod(V3(-w, top, 0), V3(w, top, 0), 0.02, m), World.rod(V3(-w, bot, 0), V3(w, bot, 0), 0.02, m));
+    const fl = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), World.mat('buoy', 0xff7a1a)); fl.position.y = 0.02; g.add(fl);
+    return g;
+  }
+  function buoyMesh(n) {
+    const g = new THREE.Group();
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), World.mat('target', 0xff5a1f, { emissive: 0x401000 }));
+    g.add(b);
+    const s = World.textSprite(String(n), '#ffffff', 0.3); s.position.z = 0.135; g.add(s);
+    const s2 = s.clone(); s2.rotation.y = Math.PI; s2.position.z = -0.135; g.add(s2);
+    return g;
+  }
+  const grabTool = M => M.rov.tools.find(t => t.type === 'prong') || M.rov.tools.find(t => t.type === 'claw');
+  function drill(o) {
+    return Object.assign({ pool: 'comp', heatSec: 0, heats: 0, views: 'free', start: { x: 0, z: -0.6, y: -0.15, heading: 0 }, actions: [], score: () => null }, o);
+  }
+  const DRILLS = {
+    drill1: drill({
+      id: 'drill1', drill: 1, title: 'Drill 1: Gate slalom', short: 'Gates', stars: [35, 60],
+      desc: 'Drive through the three gates in order: green is next. This drill teaches forward, turning and staying at the right depth.',
+      setup(M) {
+        const s = M.state;
+        s.gates = [[0, -2.5], [-1.3, -5], [1.3, -7.5]].map(([x, z], i) => {
+          const g = gateMesh(i ? 0xff7a1a : 0x22b455); g.position.set(x, 0, z); M.scene.add(g);
+          const w = 0.45;
+          M.env.obstacles.push({ a: V3(x - w, -0.15, z), b: V3(x - w, -1, z), r: 0.02 }, { a: V3(x + w, -0.15, z), b: V3(x + w, -1, z), r: 0.02 },
+            { a: V3(x - w, -0.15, z), b: V3(x + w, -0.15, z), r: 0.02 }, { a: V3(x - w, -1, z), b: V3(x + w, -1, z), r: 0.02 });
+          return { x, z, g };
+        });
+        s.next = 0; s.lastZ = M.start.z;
+      },
+      step(M) {
+        const s = M.state, p = M.rov.p, G = s.gates[s.next];
+        if (G && s.lastZ > G.z && p.z <= G.z) {
+          if (Math.abs(p.x - G.x) < 0.42 && p.y < -0.2 && p.y > -0.95) {
+            s.next++;
+            G.g.traverse(o => { if (o.material && o.geometry.type === 'CylinderGeometry') o.material = World.mat('gateDone', 0x8a9aa0); });
+            const N = s.gates[s.next];
+            if (N) N.g.traverse(o => { if (o.material && o.geometry.type === 'CylinderGeometry') o.material = World.mat('gate' + 0x22b455, 0x22b455); });
+            M.event(`Gate ${s.next} of 3!`, 'good'); M.sound && M.sound('ring');
+            if (s.next >= 3) s.done = true;
+          } else M.event('Missed the gate. Turn around and go through the middle.');
+        }
+        s.lastZ = p.z;
+      },
+      progress: M => `${M.state.next} of 3 gates`
+    }),
+    drill2: drill({
+      id: 'drill2', drill: 2, title: 'Drill 2: Dive and hold', short: 'Depth', stars: [30, 50],
+      desc: 'Follow the rope down to the orange ring, about 4 ft deep. Stay inside the ring’s depth zone for 5 seconds. This drill teaches diving and holding a steady depth.',
+      setup(M) {
+        const s = M.state, c = V3(0, -1.2, -6.5);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.025, 10, 48), World.mat('buoy', 0xff7a1a));
+        ring.rotation.x = Math.PI / 2; ring.position.copy(c); M.scene.add(ring);
+        M.scene.add(World.rod(V3(0.6, 0, -6.5), V3(0.6, -1.2, -6.5), 0.004, World.mat('line', 0x222222)));
+        const fl = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 10), World.mat('buoy', 0xff7a1a)); fl.position.set(0.6, 0.02, -6.5); M.scene.add(fl);
+        s.c = c; s.hold = 0;
+      },
+      step(M, dt) {
+        const s = M.state, p = M.rov.p;
+        const inside = Math.hypot(p.x - s.c.x, p.z - s.c.z) < 0.7 && Math.abs(p.y - s.c.y) < 0.15;
+        if (inside) { s.hold += dt; if (s.hold >= 5) s.done = true; }
+        else if (s.hold > 0.3) { M.event('Drifted out of the zone. Hold steady!'); s.hold = 0; }
+        else s.hold = 0;
+        s.inside = inside;
+      },
+      progress: M => M.state.inside ? `Holding… ${M.state.hold.toFixed(1)} of 5 s` : `Depth now ${(-M.rov.p.y / 0.3048).toFixed(1)} ft · target 3.4–4.4 ft inside the ring`
+    }),
+    drill3: drill({
+      id: 'drill3', drill: 3, title: 'Drill 3: Find it on camera', short: 'Camera', stars: [60, 100], views: 'cam', needs: 'camera',
+      desc: 'Camera only, like a real heat. Find and bump the orange buoys in order, 1 to 3. Each one appears after you touch the last. Turn slowly and scan.',
+      setup(M) {
+        const s = M.state;
+        const spots = [[2.5, -4], [-3, -6.5], [1.5, -9.5]].map(([x, z]) => [x + rand(-0.8, 0.8), z + rand(-0.8, 0.8)]);
+        s.buoys = spots.map(([x, z], i) => { const g = buoyMesh(i + 1); g.position.set(x, -0.7, z); g.visible = i === 0; M.scene.add(g); return g; });
+        s.next = 0;
+      },
+      step(M) {
+        const s = M.state, b = s.buoys[s.next];
+        if (b && M.rov.p.distanceTo(b.position) < 0.38) {
+          b.visible = false; s.next++;
+          if (s.buoys[s.next]) s.buoys[s.next].visible = true;
+          M.event(`Buoy ${s.next} found!`, 'good'); M.sound && M.sound('ring');
+          if (s.next >= 3) s.done = true;
+        }
+      },
+      progress: M => `${M.state.next} of 3 buoys`
+    }),
+    drill4: drill({
+      id: 'drill4', drill: 4, title: 'Drill 4: Pick up a ring', short: 'Pick up', stars: [30, 60], needs: 'grab',
+      desc: 'A diving ring is on the floor ahead. Hook it with your prong (drive the tip through the hole) or grab it with the claw (G).',
+      setup(M) { setupFlag(M, V3(3.5, 0, -6), { x0: -0.3, x1: 0.3, z0: -2.4, z1: -2.0 }, 1); },
+      step(M, dt) { stepRings(M, dt); const r = M.state.rings[0]; if (r && (r.st === 'prong' || r.st === 'claw')) M.state.done = true; },
+      progress: M => M.state.rings[0] && M.state.rings[0].st !== 'floor' ? 'Got it!' : 'Ring is on the floor ahead'
+    }),
+    drill5: drill({
+      id: 'drill5', drill: 5, title: 'Drill 5: Hang it on the hook', short: 'Hang', stars: [40, 80], needs: 'grab',
+      desc: 'Your ROV starts with a ring. Drive up to a J hook hanging under the tip-up, put the tool tip right on the hook, and press H (prong) or G to open the claw.',
+      setup(M) { setupFlag(M, V3(0, 0, -3.2), { x0: 2, x1: 3, z0: -8, z1: -7 }, 1); },
+      afterPlace(M) {
+        const t = grabTool(M), r = M.state.rings[0]; if (!t || !r) return;
+        if (t.type === 'prong') { r.st = 'prong'; r.tool = t; t.carried.push(r); }
+        else { r.st = 'claw'; t.held = { kind: 'ring', ref: r }; t.closed = true; }
+      },
+      step(M, dt) { stepRings(M, dt); if (M.state.hooks.some(h => h.rings.length)) M.state.done = true; },
+      progress: M => M.state.rings[0] && M.state.rings[0].st === 'floor' ? 'Dropped it: pick it up again' : 'Bring the ring to a hook'
+    }),
+    drill6: drill({
+      id: 'drill6', drill: 6, title: 'Drill 6: Turn the spool', short: 'Spool', stars: [40, 80], needs: 'tool',
+      desc: 'Find the black spool hanging under the tip-up. Push its shaft sideways with a tool (the spool fork works best) until it turns a quarter turn and the flag pops up.',
+      setup(M) { setupFlag(M, V3(0, 0, -3.2), { x0: 0, x1: 0, z0: 0, z1: 0 }, 0); },
+      step(M, dt) { stepRings(M, dt); if (M.state.flagUp) M.state.done = true; },
+      progress: M => M.state.flagUp ? 'Flag up!' : M.state.spoolContact ? `Turning… ${Math.round(Math.abs(M.state.spoolAngle) * 180 / Math.PI)}° of 90°` : 'Find the spool under the tip-up'
+    })
+  };
+  Object.assign(MISSIONS, DRILLS);
+
   const DRAG_ROUNDS = [{ name: 'Round 1', lo: 15.5, hi: 18 }, { name: 'Semifinal', lo: 12.5, hi: 14 }, { name: 'Final', lo: 10.2, hi: 11.4 }];
 
   function rearZ(M) {
@@ -585,5 +708,5 @@
     return items;
   }
 
-  U.Missions = { MISSIONS, POOLS, DRAG_ROUNDS, toggleClaw, hangRing, handToTeammate, atStart, nearWallAtSurface, mapItems, rearZ };
+  U.Missions = { MISSIONS, POOLS, DRILLS, DRAG_ROUNDS, toggleClaw, hangRing, handToTeammate, atStart, nearWallAtSurface, mapItems, rearZ };
 })();
