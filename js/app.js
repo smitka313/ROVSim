@@ -57,6 +57,16 @@
       try { await dlNS.save({ filename, data }); toast('Saved ' + filename); return true; }
       catch (e) { if (e && e.code === 'declined') { toast('Save cancelled'); return false; } }
     }
+    if (!(window.claude && window.claude.use)) {
+      try {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([data], { type: filename.endsWith('.html') ? 'text/html' : filename.endsWith('.csv') ? 'text/csv' : 'application/json' }));
+        a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        toast('Saved ' + filename + ' to your Downloads');
+        return true;
+      } catch (e) { /* fall through to copy */ }
+    }
     modal('Copy your file', `<p class="note">Saving files is not available in this view. Copy the text below, paste it into a new file and name it <b>${esc(filename)}</b>.</p><textarea id="copyArea" class="inp" style="width:100%;min-height:200px;font-family:var(--font-code);font-size:12px">${esc(data)}</textarea>`,
       [{ label: 'Copy', cls: 'go', keep: true, run: () => copyText($('#copyArea').value) }, { label: 'Close' }]);
     return false;
@@ -821,7 +831,7 @@
     const ins = insView(), b = Design.bounds(design);
     const sz = b.size.map(v => Math.round(v));
     const row = i => `<li><span class="id">${esc(i.id)}</span><span>${esc(i.text)}${i.why ? `<span class="why">${esc(i.why)}</span>` : ''}${i.kind === 'self' ? `<label class="chk" style="margin-top:4px"><input type="checkbox" data-self="${i.id}" ${i.pass ? 'checked' : ''}> We checked this on our real ROV</label>` : ''}</span><span class="pill ${i.pass ? 'pass' : i.kind === 'warn' ? 'warn' : 'fail'}">${i.pass ? 'Pass' : i.kind === 'warn' ? 'Warning' : 'Fix'}</span></li>`;
-    const shop = `<div class="card"><span class="sec-label">Build the real one</span><p class="note">The shop sheet has drawings, a cut list with exact pipe lengths, where every part goes, a wiring diagram and the inspection checklist. Open it in a browser and print it for the shop.</p><div class="row"><button class="btn go" data-act="shopSheet">Download the shop sheet</button></div></div>`;
+    const shop = `<div class="card"><span class="sec-label">Shop sheet</span><p class="note">Plans for building your real ROV: drawings, the pipe cut list, where each part goes, and the wiring.</p><div class="row"><button class="btn go" data-act="shopSheet">View shop sheet</button></div></div>`;
     if (opts.junior) return stepHead(7, 'Ready to dive?', '') + `<div class="sec"><ul class="insp">${ins.items.map(row).join('')}</ul></div>
       <div class="card"><dl class="kv"><dt>Build cost</dt><dd>${fmt$(ins.budget.total)} of $2,000</dd><dt>Size</dt><dd>${sz.join(' × ')} in</dd></dl></div>${shop}`;
     return stepHead(7, 'Inspection and budget', 'This is the official 2027 inspection form plus a few build checks. Fix anything red, then take your ROV to the pool.') + shop + `
@@ -966,7 +976,7 @@
       case 'tank': setMode('pilot'); return loadMission('tank');
       case 'goPilot': return $('#modePilot').click();
       case 'goBuild': return setMode('build');
-      case 'shopSheet': return saveFile(slug($('#rovName').value) + '-shop-sheet.html', Extras.shopSheet(design, $('#teamName').value.trim(), $('#rovName').value));
+      case 'shopSheet': return openShopSheet();
       case 'logRun': return logRun();
       case 'drillAgain': return loadMission(M.def.id);
       case 'drillNext': { const nx = 'drill' + (M.def.drill + 1); return loadMission(MISSIONS[nx] ? nx : 'practice'); }
@@ -1870,6 +1880,19 @@
   });
   $('#btnJournal').onclick = openJournal;
 
+  // Shop sheet shown inside the app; Print works on a normal web page, Save works everywhere
+  function openShopSheet() {
+    const html = Extras.shopSheet(design, $('#teamName').value.trim(), $('#rovName').value, { embed: true });
+    const inClaude = !!(window.claude && window.claude.use);
+    $('#ssPrint').hidden = inClaude;
+    $('#ssNote').textContent = inClaude ? 'To print, save a copy, then open the file and print it from your browser.' : '';
+    $('#ssFrame').srcdoc = html;
+    $('#sheetView').hidden = false;
+  }
+  $('#ssClose').onclick = () => { $('#sheetView').hidden = true; };
+  $('#ssPrint').onclick = () => { try { $('#ssFrame').contentWindow.print(); } catch (e) { toast('Printing is not available here. Save a copy and print that.'); } };
+  $('#ssSave').onclick = () => saveFile(slug($('#rovName').value) + '-shop-sheet.html', Extras.shopSheet(design, $('#teamName').value.trim(), $('#rovName').value));
+
   function setJunior(on) {
     opts.junior = on; store.set('opts', opts);
     if (on) {
@@ -1919,7 +1942,7 @@
       <button data-m="open">Open a design file…</button>
       <button data-m="save">Save design file</button>
       <button data-m="budget">Download budget (CSV)</button>
-      <button data-m="shop">Download the shop sheet</button>
+      <button data-m="shop">Shop sheet…</button>
       <button data-m="log">Design log…</button>
       <div class="menu-sep"></div><div class="menu-label">Options</div>
       <label class="chk"><input type="checkbox" data-o="sound" ${opts.sound ? 'checked' : ''}> Sound</label>

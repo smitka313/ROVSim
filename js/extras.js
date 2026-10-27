@@ -127,7 +127,8 @@
     return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px"><style>text{font-family:Segoe UI,system-ui,sans-serif}</style>${s}<text x="10" y="${H - 6}" font-size="11" fill="#40525a">Red = positive, black = negative. One wire pair per motor runs through the tether.</text></svg>`;
   }
 
-  function shopSheet(d, team, rov) {
+  function shopSheet(d, team, rov, o) {
+    o = o || {};
     const ins = Design.inspect(d), B = ins.budget, mp = Design.massProps(d), b = Design.bounds(d);
     const lo = Math.min(...d.pipes.flatMap(p => [p.a[1], p.b[1]]));
     const fc = {}; Design.fittings(d).forEach(f => fc[f.type] = (fc[f.type] || 0) + 1);
@@ -141,7 +142,7 @@
       .meta{color:#586a72}.box{display:inline-block;width:13px;height:13px;border:1.5px solid #14232a;vertical-align:-2px;margin-right:6px}
       .warn{color:#b4441b;font-weight:600}.print{float:right;padding:6px 12px}@media print{.print{display:none}section{break-inside:avoid}}`;
     return `<!doctype html><html><head><meta charset="utf-8"><title>Shop sheet: ${esc(rov)}</title><style>${css}</style></head><body>
-      <button class="print" onclick="window.print()">Print</button>
+      ${o.embed ? '' : '<button class="print" onclick="window.print()">Print</button>'}
       <h1>Shop sheet: ${esc(rov)}</h1>
       <p class="meta">Team: ${esc(team || '—')} · Underwater IVD 2026–27 · made ${new Date().toLocaleDateString()}</p>
       <p>Size ${b.size.map(v => Math.round(v)).join(' × ')} in (W × H × L) · ${Math.round(mp.M)} g in air · net buoyancy ${Math.round(mp.net) >= 0 ? '+' : ''}${Math.round(mp.net)} g in fresh water · build cost ${fmt$(B.total)}</p>

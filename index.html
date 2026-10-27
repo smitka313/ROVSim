@@ -427,6 +427,18 @@ details.card > summary { font-size: 13.5px; }
   <div id="jBody" style="display:flex;flex-direction:column;gap:12px;max-width:900px"></div>
 </section>
 
+<section class="teacher" id="sheetView" hidden aria-label="Shop sheet">
+  <div class="thead">
+    <h2>Shop sheet</h2>
+    <button class="btn go" id="ssPrint">Print</button>
+    <button class="btn" id="ssSave">Save a copy</button>
+    <span class="note" id="ssNote"></span>
+    <span class="spacer"></span>
+    <button class="btn" id="ssClose">Close</button>
+  </div>
+  <iframe id="ssFrame" title="Shop sheet" style="flex:1;min-height:70vh;width:100%;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
+</section>
+
 <input type="file" id="openFile" accept=".json,application/json" hidden>
 
 <div class="modal" id="modal" hidden>
