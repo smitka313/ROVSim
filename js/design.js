@@ -37,8 +37,8 @@
         P('gph500', [7.5, 4, 7], 'fwd');
         P('gph500', [0, 8, 0], 'down');
         P('fishcam', [0, 7, -8], 'fwd', { tilt: -20 });
-        P('noodle6', [-6, 9.5, 1], 'back');
-        P('noodle6', [6, 9.5, 1], 'back');
+        P('noodle6', [-6, 9.5, 2], 'back');
+        P('noodle6', [6, 9.5, 2], 'back');
         P('washer', [0, 0, 7], 'fwd', { qty: 4 });
         P('prong12', [0, 0, -7], 'fwd');
         normalize(d);

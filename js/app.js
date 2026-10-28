@@ -2203,7 +2203,7 @@
       <div class="formula">r = d ÷ 2 &nbsp;&nbsp; A = π × r²<br>example: d = 52.0 cm = 0.520 m → r = 0.260 m → A = 3.1416 × 0.0676 = 0.21 m²</div>
       <p>Convert centimeters to meters <i>before</i> squaring: 1 m² = 10,000 cm². Sanity check: a hoop the size of a trash can lid is less than a quarter of a square meter.</p>
       <p>Score = 100 × (1 − |answer − known| ÷ known). Being 5% off scores 95.</p>`,
-    'Mission strategy': `<p><b>Rings</b>: a prong collects several rings in one trip, but pointing it down lets them slide off. Hang rings by putting the prong tip right on a J hook bowl and pressing H. Rings handed to shore score only 5 and cancel the time bonus.</p>
+    'Mission strategy': `<p><b>Rings</b>: the diving rings stand upright on the floor (a float in the white tab keeps them up). Hover a few inches off the floor, line up square to a ring, and drive the prong straight through the hole. A prong collects several rings in one trip, but pointing it down lets them slide off. Hang rings by putting the prong tip right on a J hook bowl and pressing H. Rings handed to shore score only 5 and cancel the time bonus.</p>
       <p><b>Flag</b>: push the spool shaft sideways (the spool fork catches it best) until it turns a quarter turn.</p>
       <p><b>Egg sacs</b>: get a prong or claw through the ring, then follow the arm’s shape exactly: up, over, down. Released sacs float to the surface; push them to any pool edge for a teammate to grab.</p>
       <p><b>Pilots</b>: switch at 7:00. Use the spotter map as your deck teammates’ voices.</p>`

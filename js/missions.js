@@ -58,7 +58,7 @@
     s.hooks = tip.userData.hooks;
     s.spoolTop = V3(0, 0.0, 0).add(o); s.spoolBot = V3(0, tip.userData.spoolY - 0.015, 0).add(o);
     capsulesFromMesh(ob, s.spoolTop, s.spoolBot, 0.006);
-    // 10 standard 6" diving rings on the floor
+    // 10 standard 6" diving rings standing upright on the floor
     s.rings = [];
     for (let i = 0; i < count; i++) {
       let x, z, ok = false, tries = 0;
@@ -67,12 +67,16 @@
         ok = s.rings.every(r => Math.hypot(r.pos.x - x, r.pos.z - z) > 0.45) && Math.hypot(x - o.x, z - o.z) > 0.8 && (!M.state.hoopAt || Math.hypot(x - M.state.hoopAt.x, z - M.state.hoopAt.z) > 1);
       }
       const mesh = World.ringMesh(RING_COLORS[i % 4]);
-      const pos = V3(x, -M.pool.depth(z) + 0.012, z);
-      mesh.position.copy(pos); mesh.rotation.x = Math.PI / 2; mesh.rotation.z = rand(0, 3);
+      const pos = V3(x, -M.pool.depth(z) + RING_UP, z);
+      const yaw = count === 1 ? 0 : rand(0, Math.PI); // a single drill ring faces the start
+      mesh.position.copy(pos); mesh.rotation.set(0, yaw, 0);
       M.scene.add(mesh);
-      s.rings.push({ i, mesh, pos, st: 'floor', vy: 0 });
+      s.rings.push({ i, mesh, pos, yaw, st: 'floor', vy: 0 });
     }
   }
+
+  const RING_UP = World.RING_R + World.RING_T; // height of a standing ring's center above the floor
+  const ringNormal = r => V3(Math.sin(r.yaw), 0, Math.cos(r.yaw));
 
   function stepRings(M, dt) {
     const s = M.state, rov = M.rov;
@@ -82,13 +86,13 @@
       const W = toolWorld(M, t);
       t.world = W;
       if (t.type === 'prong') {
-        // hook rings lying on the floor
+        // hook standing rings: the prong tip must pass through the hole, roughly head-on
         if (t.carried.length < t.P.cap) {
           for (const r of s.rings) {
             if (r.st !== 'floor' && r.st !== 'falling') continue;
-            const fl = -M.pool.depth(r.pos.z);
-            const dh = Math.hypot(W.tip.x - r.pos.x, W.tip.z - r.pos.z);
-            if (dh < 0.055 && W.tip.y < r.pos.y + 0.05 && W.tip.y > fl - 0.05) {
+            const n = ringNormal(r), d = W.tip.clone().sub(r.pos);
+            const along = d.dot(n), radial = d.clone().addScaledVector(n, -along).length();
+            if (Math.abs(along) < 0.03 && radial < World.RING_R - World.RING_T - 0.012 && Math.abs(W.dir.dot(n)) > 0.45) {
               r.st = 'prong'; r.tool = t; t.carried.push(r);
               M.event('Ring hooked (' + t.carried.length + ' on the prong)');
               if (t.carried.length >= t.P.cap) break;
@@ -98,7 +102,7 @@
         // rings slide off a prong that points down
         if (t.carried.length && W.dir.y < -0.55) {
           t.slide = (t.slide || 0) + dt;
-          if (t.slide > 0.35) { t.slide = 0; const r = t.carried.pop(); r.st = 'falling'; r.vy = 0; r.pos.copy(W.tip); M.event('A ring slid off the prong'); }
+          if (t.slide > 0.35) { t.slide = 0; const r = t.carried.pop(); r.st = 'falling'; r.vy = 0; r.pos.copy(W.tip); r.yaw = Math.atan2(W.dir.x, W.dir.z); M.event('A ring slid off the prong'); }
         } else t.slide = 0;
       }
       if (t.type === 'claw' && t.held && t.held.kind === 'ring') {
@@ -133,25 +137,27 @@
       if (r.st === 'falling') {
         r.vy = Math.max(r.vy - 0.6 * dt, -0.25);
         r.pos.y += r.vy * dt;
-        const fl = -M.pool.depth(r.pos.z) + 0.012;
+        const fl = -M.pool.depth(r.pos.z) + RING_UP; // the float tab rights the ring as it lands
         if (r.pos.y <= fl) { r.pos.y = fl; r.st = 'floor'; }
       }
     }
     // draw rings
     for (const r of s.rings) {
       const m = r.mesh;
-      if (r.st === 'floor' || r.st === 'falling') { m.position.copy(r.pos); m.rotation.set(Math.PI / 2, 0, r.i); m.visible = true; }
+      if (r.st === 'floor' || r.st === 'falling') { m.position.copy(r.pos); m.rotation.set(0, r.yaw, 0); m.visible = true; }
       else if (r.st === 'prong') {
+        // hangs from the prong by its top, tab up, hole along the prong
         const t = r.tool, W = t.world, k = t.carried.indexOf(r);
         const along = t.P.tipLen * (0.82 - k * 0.11);
-        m.position.copy(W.mount).addScaledVector(W.dir, along).add(V3(0, -0.055, 0));
-        m.quaternion.setFromUnitVectors(V3(0, 0, 1), W.dir);
+        m.position.copy(W.mount).addScaledVector(W.dir, along).add(V3(0, -(World.RING_R - World.RING_T - 0.012), 0));
+        m.up.set(0, 1, 0); m.lookAt(m.position.clone().add(W.dir));
         r.pos.copy(m.position);
+        r.yaw = Math.atan2(W.dir.x, W.dir.z);
         m.visible = true;
-      } else if (r.st === 'claw') { m.position.copy(r.pos); m.rotation.set(0.2, 0, 0); m.visible = true; }
+      } else if (r.st === 'claw') { m.position.copy(r.pos); m.quaternion.copy(M.rov.qn); r.yaw = new THREE.Euler().setFromQuaternion(M.rov.qn, 'YXZ').y; m.visible = true; }
       else if (r.st === 'hook') {
         const h = s.hooks[r.hook], k = h.rings.indexOf(r);
-        m.position.copy(h.world).add(V3((k - (h.rings.length - 1) / 2) * 0.012, -0.055, 0));
+        m.position.copy(h.world).add(V3((k - (h.rings.length - 1) / 2) * 0.012, -(World.RING_R - World.RING_T - 0.012), 0));
         m.rotation.set(0, 0, 0); m.visible = true;
       } else if (r.st === 'shore') m.visible = false;
     }
@@ -610,10 +616,10 @@
     }),
     drill4: drill({
       id: 'drill4', drill: 4, title: 'Drill 4: Pick up a ring', short: 'Pick up', stars: [30, 60], needs: 'grab',
-      desc: 'A diving ring is on the floor ahead. Hook it with your prong (drive the tip through the hole) or grab it with the claw (G).',
+      desc: 'A diving ring stands on the floor ahead. Hover just above the floor, line up square to the ring, and drive the prong tip straight through the hole. Or grab it with the claw (G).',
       setup(M) { setupFlag(M, V3(3.5, 0, -6), { x0: -0.3, x1: 0.3, z0: -2.4, z1: -2.0 }, 1); },
       step(M, dt) { stepRings(M, dt); const r = M.state.rings[0]; if (r && (r.st === 'prong' || r.st === 'claw')) M.state.done = true; },
-      progress: M => M.state.rings[0] && M.state.rings[0].st !== 'floor' ? 'Got it!' : 'Ring is on the floor ahead'
+      progress: M => M.state.rings[0] && M.state.rings[0].st !== 'floor' ? 'Got it!' : 'Ring is standing on the floor ahead'
     }),
     drill5: drill({
       id: 'drill5', drill: 5, title: 'Drill 5: Hang it on the hook', short: 'Hang', stars: [40, 80], needs: 'grab',

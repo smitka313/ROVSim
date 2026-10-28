@@ -59,7 +59,7 @@
     // Tools (attachments). tipLen = how far the working tip sticks out along the tool direction.
     prong6:  { kind: 'tool', tool: 'prong', cat: 'Tools', budget: 'PVC Tube & Fittings', name: 'Ring pick-up prong, 6"', short: 'Prong 6"',
                price: 1.80, g: 45, cm3: 32, tipLen: 0.16, cap: 3, size: [0.022, 0.022, 0.16],
-               note: 'A ½" PVC finger with an upturned tip. Drive the tip through a ring to hook it. Carries 3 rings.' },
+               note: 'A ½" PVC finger with an upturned tip. Drive it straight through a standing ring to hook it. Carries 3 rings.' },
     prong12: { kind: 'tool', tool: 'prong', cat: 'Tools', budget: 'PVC Tube & Fittings', name: 'Ring pick-up prong, 12"', short: 'Prong 12"',
                price: 2.40, g: 85, cm3: 60, tipLen: 0.31, cap: 6, size: [0.022, 0.022, 0.31],
                note: 'Carries 6 rings, but sticks out further, so turning near the apparatus is harder.' },

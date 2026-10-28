@@ -262,9 +262,16 @@
     return g;
   }
 
+  // 6" diving ring: weighted at the bottom with a float in the white tab, so it stands upright on the pool floor.
+  // The ring lies in its local XY plane (hole faces local z) with the tab at the top.
+  const RING_R = 0.07, RING_T = 0.0085;
   function ringMesh(color) {
-    const m = new THREE.Mesh(new THREE.TorusGeometry(0.068, 0.011, 8, 28), mat('ring' + color, color, { roughness: 0.4 }));
-    return m;
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.TorusGeometry(RING_R, RING_T, 10, 36), mat('ring' + color, color, { roughness: 0.4 })));
+    const tab = new THREE.Mesh(new THREE.CylinderGeometry(RING_T * 1.55, RING_T * 1.55, 0.036, 14), mat('ringTab', 0xf4f4f0, { roughness: 0.6 }));
+    tab.rotation.z = Math.PI / 2; tab.position.y = RING_R;
+    g.add(tab);
+    return g;
   }
 
   function tipUpMesh() {
@@ -406,5 +413,5 @@
     return g;
   }
 
-  Object.assign(U, { World: { mat, rod, buildRov, partMesh, buildPool, hoopMesh, ringMesh, tipUpMesh, reefMesh, sacMesh, textSprite, ARMS, makePath, pointAt, dirAt, project, rulerTexture } });
+  Object.assign(U, { World: { RING_R, RING_T, mat, rod, buildRov, partMesh, buildPool, hoopMesh, ringMesh, tipUpMesh, reefMesh, sacMesh, textSprite, ARMS, makePath, pointAt, dirAt, project, rulerTexture } });
 })();
