@@ -318,7 +318,7 @@
       bowl.rotation.y = Math.PI / 2; bowl.rotation.z = Math.PI; bowl.position.set(x, yb, z + 1.69 * IN); g.add(bowl);
       const tip = V3(x, yb + 0.02, z + 3.375 * IN);
       g.add(rod(V3(x, yb, z + 3.375 * IN), tip, 0.0107, pvc));
-      hooks.push({ bowl: V3(x, yb - 1.69 * IN * 0.6, z + 1.69 * IN), side: s, rings: [], drop });
+      hooks.push({ bowl: V3(x, yb - 1.69 * IN * 0.6, z + 1.69 * IN), tip: tip.clone(), side: s, rings: [], drop });
     });
     g.userData.hooks = hooks;
     return g;

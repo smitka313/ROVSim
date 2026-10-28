@@ -31,7 +31,7 @@
       label: 'Starter ROV (workshop style)',
       make() {
         const d = blank('Starter ROV');
-        setBox(d, { w: 12, h: 8, l: 14, top: true, bottom: false, mid: false });
+        setBox(d, { w: 12, h: 8, l: 14, top: true, bottom: false, mid: false, post: true });
         const P = (type, at, dir, extra) => d.parts.push(Object.assign({ id: uid(), type, at, dir }, extra || {}));
         P('gph500', [-7.5, 4, 7], 'fwd');
         P('gph500', [7.5, 4, 7], 'fwd');
@@ -40,7 +40,7 @@
         P('noodle6', [-6, 9.5, 2], 'back');
         P('noodle6', [6, 9.5, 2], 'back');
         P('washer', [0, 0, 7], 'fwd', { qty: 4 });
-        P('prong12', [0, 0, -7], 'fwd');
+        P('prong12', [0, 4, -7], 'fwd');
         normalize(d);
         return d;
       }
@@ -49,7 +49,7 @@
       label: 'Strafing ROV (4 motors, claw)',
       make() {
         const d = blank('Strafing ROV');
-        setBox(d, { w: 14, h: 8, l: 16, top: true, bottom: true, mid: false });
+        setBox(d, { w: 14, h: 8, l: 16, top: true, bottom: true, mid: false, post: true });
         const P = (type, at, dir, extra) => d.parts.push(Object.assign({ id: uid(), type, at, dir }, extra || {}));
         P('gph750', [-8.5, 4, 8], 'fwd');
         P('gph750', [8.5, 4, 8], 'fwd');
@@ -59,7 +59,7 @@
         P('fishcam2', [0, 1, -9], 'fwd', { tilt: -60 });
         P('noodle12', [-7, 9.5, 0], 'back');
         P('noodle12', [7, 9.5, 0], 'back');
-        P('claw', [0, 0, -8], 'fwd');
+        P('claw', [0, 4, -8], 'fwd');
         P('fork', [-5, 8, -8], 'fwd');
         normalize(d);
         trimToNeutral(d, 40, [[-7, 0, 1], [7, 0, 1]]);
@@ -91,6 +91,7 @@
     if (B.top) P.push({ a: [-w2, h, 0], b: [w2, h, 0] });
     if (B.bottom) P.push({ a: [-w2, 0, 0], b: [w2, 0, 0] });
     if (B.mid) { const m = Math.round(h / 2); P.push({ a: [-w2, m, -l2], b: [-w2, m, l2] }, { a: [w2, m, -l2], b: [w2, m, l2] }); }
+    if (B.post) P.push({ a: [0, 0, -l2], b: [0, h, -l2] }); // front center post for mounting tools
     return P;
   }
   function setBox(d, B) { d.box = Object.assign({}, B); d.pipes = boxPipes(B); normalize(d); }
@@ -442,7 +443,7 @@
     d.pipes = obj.pipes.filter(p => p && p.a && p.b).slice(0, 400).map(p => ({ a: p.a.slice(0, 3).map(num), b: p.b.slice(0, 3).map(num) }));
     d.parts = obj.parts.filter(p => p && PARTS[p.type]).slice(0, 80).map(p => ({ id: uid(), type: p.type, at: (p.at || [0, 0, 0]).slice(0, 3).map(num), dir: DIRS[p.dir] ? p.dir : 'fwd', tilt: Math.max(-90, Math.min(30, +p.tilt || 0)), qty: Math.max(1, Math.min(12, Math.round(+p.qty || 1))) }));
     if (obj.elec) for (const k in ELECTRICAL) if (ELECTRICAL[k].options[obj.elec[k]]) d.elec[k] = obj.elec[k];
-    if (obj.box && ['w', 'h', 'l'].every(k => Number.isFinite(+obj.box[k]))) d.box = { w: Math.max(6, Math.min(24, Math.round(+obj.box.w / 2) * 2)), h: Math.max(4, Math.min(16, Math.round(+obj.box.h))), l: Math.max(6, Math.min(28, Math.round(+obj.box.l / 2) * 2)), top: !!obj.box.top, bottom: !!obj.box.bottom, mid: !!obj.box.mid };
+    if (obj.box && ['w', 'h', 'l'].every(k => Number.isFinite(+obj.box[k]))) d.box = { w: Math.max(6, Math.min(24, Math.round(+obj.box.w / 2) * 2)), h: Math.max(4, Math.min(16, Math.round(+obj.box.h))), l: Math.max(6, Math.min(28, Math.round(+obj.box.l / 2) * 2)), top: !!obj.box.top, bottom: !!obj.box.bottom, mid: !!obj.box.mid, post: !!obj.box.post };
     if (obj.selfCheck) d.selfCheck = { '7.4': !!obj.selfCheck['7.4'], '7.5': !!obj.selfCheck['7.5'] };
     normalize(d);
     return d;

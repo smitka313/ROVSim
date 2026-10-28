@@ -52,7 +52,7 @@
     capsulesFromMesh(ob, V3(-W / 2, 0.03, -D / 2 - 0.35).add(o), V3(-W / 2, 0.03, D / 2).add(o), 0.036);
     capsulesFromMesh(ob, V3(W / 2, 0.03, -D / 2 - 0.35).add(o), V3(W / 2, 0.03, D / 2).add(o), 0.036);
     tip.userData.hooks.forEach(h => {
-      h.world = h.bowl.clone().add(o);
+      h.world = h.bowl.clone().add(o); h.tipWorld = h.tip.clone().add(o);
       capsulesFromMesh(ob, V3(h.side * W / 2, 0.02, D / 2).add(o), V3(h.side * W / 2, 0.02 - h.drop * IN, D / 2).add(o), 0.012);
     });
     s.hooks = tip.userData.hooks;
@@ -164,18 +164,48 @@
   }
 
   // H key: slide a ring off the prong onto a J hook, or open the claw over the hook
+  // H key: hang the ring nearest the prong tip on a J hook. It works when the hook's bowl or
+  // upturned tip is inside the ring, and otherwise tells the pilot which way to move.
   function hangRing(M) {
     const s = M.state;
+    if (!s.hooks) return false;
+    const up = World.RING_R - World.RING_T - 0.012;
+    let best = null;
     for (const t of M.rov.tools) {
       if (!t.world) continue;
-      for (let hi = 0; hi < s.hooks.length; hi++) {
-        const h = s.hooks[hi];
-        if (t.type === 'prong' && t.carried.length && t.world.tip.distanceTo(h.world) < 0.09) {
-          const r = t.carried.pop(); r.st = 'hook'; r.hook = hi; h.rings.push(r);
-          M.event('Ring on the hook! +15', 'good'); M.sound && M.sound('ring'); return true;
-        }
+      let ring = null, c = null, n = null;
+      if (t.type === 'prong' && t.carried.length) {
+        ring = t.carried[0];
+        c = t.world.mount.clone().addScaledVector(t.world.dir, t.P.tipLen * 0.82).add(V3(0, -up, 0));
+        n = t.world.dir.clone();
+      } else if (t.type === 'claw' && t.held && t.held.kind === 'ring') {
+        ring = t.held.ref; c = ring.pos.clone(); n = t.world.dir.clone();
       }
+      if (!ring) continue;
+      n.y = 0; if (n.lengthSq() < 1e-6) n.set(0, 0, 1); n.normalize();
+      s.hooks.forEach((h, hi) => {
+        [h.world, h.tipWorld].forEach(pt => {
+          const d = pt.clone().sub(c), along = d.dot(n), radial = d.clone().addScaledVector(n, -along).length();
+          const fit = Math.abs(along) < 0.06 && radial < World.RING_R + 0.01;
+          const score = Math.abs(along) + radial;
+          if (!best || fit && !best.fit || fit === best.fit && score < best.score) best = { t, ring, hi, fit, score, dy: c.y - pt.y, dist: Math.hypot(d.x, d.z) };
+        });
+      });
     }
+    if (!best) { M.event('Pick up a ring first.'); return false; }
+    if (best.fit) {
+      const { t, ring, hi } = best, h = s.hooks[hi];
+      if (t.type === 'prong') t.carried.splice(t.carried.indexOf(ring), 1);
+      else { t.held = null; t.closed = false; }
+      ring.st = 'hook'; ring.hook = hi; h.rings.push(ring);
+      M.event('Ring on the hook! +15', 'good'); M.sound && M.sound('ring');
+      return true;
+    }
+    const inch = v => Math.max(1, Math.round(Math.abs(v) / IN));
+    if (best.dist > 0.25) M.event('Get closer to a J hook. They hang under the front corners of the tip-up.');
+    else if (best.dy > 0.04) M.event(`Lower the ring about ${inch(best.dy)} in to reach the hook.`);
+    else if (best.dy < -0.04) M.event(`Raise the ring about ${inch(best.dy)} in to reach the hook.`);
+    else M.event('Almost: line the ring up so the hook goes through its middle.');
     return false;
   }
 
@@ -401,7 +431,7 @@
       },
       step(M, dt) { stepRings(M, dt); stepSacs(M, dt); },
       actions: [
-        { key: 'h', label: 'Hang ring (H)', run: M => { if (!hangRing(M)) M.event('Put the prong tip right on a J hook first.'); } },
+        { key: 'h', label: 'Hang ring (H)', run: M => { hangRing(M); } },
         { key: 't', label: 'Hand to teammate (T)', run: handToTeammate }
       ],
       score: M => liveCounts(M)
@@ -432,7 +462,7 @@
       setup(M) { setupFlag(M, V3(1.6, 0, -5.4), { x0: -3.5, x1: 3.5, z0: -2.0, z1: -7.6 }); },
       step(M, dt) { stepRings(M, dt); },
       actions: [
-        { key: 'h', label: 'Hang ring (H)', run: M => { if (!hangRing(M)) M.event('Put the prong tip right on a J hook first.'); } },
+        { key: 'h', label: 'Hang ring (H)', run: M => { hangRing(M); } },
         { key: 't', label: 'Hand to teammate (T)', run: handToTeammate }
       ],
       score(M) {

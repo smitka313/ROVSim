@@ -796,6 +796,7 @@
         <label class="chk"><input type="checkbox" data-boxopt="top" ${B.top ? 'checked' : ''}> Crossbar across the top (a place for a vertical motor)</label>
         <label class="chk"><input type="checkbox" data-boxopt="bottom" ${B.bottom ? 'checked' : ''}> Crossbar across the bottom</label>
         <label class="chk"><input type="checkbox" data-boxopt="mid" ${B.mid ? 'checked' : ''}> Side rails halfway up</label>
+        <label class="chk"><input type="checkbox" data-boxopt="post" ${B.post ? 'checked' : ''}> Post at the front center (a place for a prong or claw at mid height)</label>
         <p class="note">Your parts move with the frame when you resize it. Smaller frames cost less and turn faster; bigger ones are steadier and have room for more parts.</p>
       </div>` : `<div class="card"><span class="sec-label">Custom frame</span><p class="note">You changed the frame by hand, so the size sliders are off. Switching back to a box replaces your custom pipes.</p><button class="btn small" data-act="toBox">Switch back to a box frame</button></div>`;
     return stepHead(1, 'Build the frame', 'The frame is what everything else attaches to. Most teams start with a simple box of ½" PVC pipe.') + boxCard + `
@@ -1328,7 +1329,7 @@
     e.preventDefault(); b.setPointerCapture(e.pointerId);
     const k = b.dataset.k;
     if (k === 'claw') return Missions.toggleClaw(M);
-    if (k === 'hang') return Missions.hangRing(M) || pushEvent('Put the prong tip right on a J hook first.');
+    if (k === 'hang') return Missions.hangRing(M);
     if (k === 'give') return Missions.handToTeammate(M);
     if (k === 'cam') return setView(view === 'cam' && M.rov.cameras.length > 1 && camIdx === 0 ? 'cam2' : 'cam');
     touchHeld.add(k); b.classList.add('on');
@@ -1353,7 +1354,7 @@
         const was = padPrev[i]; padPrev[i] = b.pressed;
         if (b.pressed && !was) {
           if (i === 0) Missions.toggleClaw(M);
-          if (i === 1) Missions.hangRing(M) || pushEvent('Put the prong tip right on a J hook first.');
+          if (i === 1) Missions.hangRing(M);
           if (i === 2) Missions.handToTeammate(M);
           if (i === 3) setView(view === 'cam' && M.rov.cameras.length > 1 && camIdx === 0 ? 'cam2' : 'cam');
         }
