@@ -44,5 +44,8 @@ It also works on GitHub Pages (Settings → Pages → deploy from the `main` bra
 - `js/extras.js`: design log, shop sheet and heat replay
 - `js/app.js`: interface, builder, piloting, heats, turn-in and teacher view
 - `vendor/three.min.js`: three.js r128 (MIT license)
+- `assets/squareone-logo.png`: Square One Education Network logo, used for team resources as allowed by parameter 10.6
+
+This simulator was built for Square One Underwater IVD teams. It is not an official Square One product.
 
 The physics are simplified and part prices are typical estimates. Test real ROVs and check real prices before submitting a budget.

@@ -16,19 +16,21 @@
 :root {
   --bg: #e9f0f1; --panel: #ffffff; --panel-2: #f3f7f8; --ink: #14232a; --muted: #586a72; --line: #d2dde0;
   --accent: #007c8a; --accent-ink: #ffffff; --accent-soft: #d9f0f2;
-  --lime: #8cc63f; --lime-soft: #eef7e0;
+  --lime: #96c625; --lime-soft: #eef7e0;
   --head: #0f2a33; --head-ink: #e6f1f3; --head-muted: #93aeb6;
+  --hb: rgba(255,255,255,.08); --hb-line: rgba(255,255,255,.14); --hb-hover: rgba(255,255,255,.16); --toast: #0f2a33; --toast-ink: #e6f1f3;
   --warn: #b4441b; --warn-soft: #fbe6dc; --good: #2a8a3a; --good-soft: #e1f3e3; --info-soft: #e5edfd; --info: #2f5fd0; --amber: #a36a00; --amber-soft: #fff1d1;
   --chip: #e9f0f2; --code-bg: #f4f8f9; --view-bg: #0b3540;
   --font-ui: "Lexend", "Segoe UI", system-ui, sans-serif;
   --font-code: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --r: 10px;
 }
+:root.branded { --head: #ffffff; --head-ink: #123842; --head-muted: #5b7279; --hb: #f2f7ea; --hb-line: #d3e2bf; --hb-hover: #e6f0d8; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0c1518; --panel: #142024; --panel-2: #19282d; --ink: #e1ecef; --muted: #93a8af; --line: #29393e;
     --accent: #3cc3d1; --accent-ink: #062126; --accent-soft: #123338; --lime: #a6dc5c; --lime-soft: #1e2c12;
-    --head: #081115; --head-ink: #e1ecef; --head-muted: #7f979e;
+    --head: #081115; --head-ink: #e1ecef; --head-muted: #7f979e; --hb: rgba(255,255,255,.08); --hb-line: rgba(255,255,255,.14); --hb-hover: rgba(255,255,255,.16); --toast: #081115;
     --warn: #ff9a6b; --warn-soft: #3a2018; --good: #6fd67f; --good-soft: #15301a; --info-soft: #1a2540; --info: #8fb0ff; --amber: #ffc95c; --amber-soft: #33270c;
     --chip: #1f2e33; --code-bg: #10191c; --view-bg: #04161b;
     color-scheme: dark;
@@ -37,7 +39,7 @@
 :root[data-theme="dark"] {
   --bg: #0c1518; --panel: #142024; --panel-2: #19282d; --ink: #e1ecef; --muted: #93a8af; --line: #29393e;
   --accent: #3cc3d1; --accent-ink: #062126; --accent-soft: #123338; --lime: #a6dc5c; --lime-soft: #1e2c12;
-  --head: #081115; --head-ink: #e1ecef; --head-muted: #7f979e;
+  --head: #081115; --head-ink: #e1ecef; --head-muted: #7f979e; --hb: rgba(255,255,255,.08); --hb-line: rgba(255,255,255,.14); --hb-hover: rgba(255,255,255,.16); --toast: #081115;
   --warn: #ff9a6b; --warn-soft: #3a2018; --good: #6fd67f; --good-soft: #15301a; --info-soft: #1a2540; --info: #8fb0ff; --amber: #ffc95c; --amber-soft: #33270c;
   --chip: #1f2e33; --code-bg: #10191c; --view-bg: #04161b;
   color-scheme: dark;
@@ -55,14 +57,26 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; white-space: nowrap; }
 .brand svg { width: 32px; height: 32px; }
 .brand small { display: block; font-size: 11px; font-weight: 500; color: var(--head-muted); letter-spacing: .04em; }
-.seg { display: inline-flex; background: rgba(255,255,255,.08); border-radius: 999px; padding: 3px; }
+.seg { display: inline-flex; background: var(--hb); border-radius: 999px; padding: 3px; }
 .seg button { border: 0; background: transparent; color: var(--head-muted); padding: 6px 16px; border-radius: 999px; cursor: pointer; font-weight: 500; }
 .seg button[aria-pressed="true"] { background: var(--head-ink); color: var(--head); }
 .tools { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.tools input[type=text] { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); color: var(--head-ink); border-radius: 8px; padding: 6px 10px; width: 150px; }
+.tools input[type=text] { background: var(--hb); border: 1px solid var(--hb-line); color: var(--head-ink); border-radius: 8px; padding: 6px 10px; width: 150px; }
 .tools input::placeholder { color: var(--head-muted); }
-.hbtn { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); color: var(--head-ink); border-radius: 8px; padding: 6px 11px; cursor: pointer; white-space: nowrap; }
-.hbtn:hover { background: rgba(255,255,255,.16); }
+.hbtn { background: var(--hb); border: 1px solid var(--hb-line); color: var(--head-ink); border-radius: 8px; padding: 6px 11px; cursor: pointer; white-space: nowrap; }
+.hbtn:hover { background: var(--hb-hover); }
+.brand-logo { display: none; height: 34px; width: auto; }
+.branded .brand-logo { display: block; }
+.branded .brand > svg { display: none; }
+.branded .brand-name { padding-left: 12px; border-left: 2px solid var(--hb-line); }
+.branded .top { border-bottom: 3px solid var(--lime); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .brand-logo { background: #ffffff; border-radius: 8px; padding: 3px 8px; height: 36px; } }
+:root[data-theme="dark"] .brand-logo { background: #ffffff; border-radius: 8px; padding: 3px 8px; height: 36px; }
+.welcome-logo { display: none; height: 44px; width: auto; align-self: flex-start; }
+.branded .welcome-logo { display: block; }
+.brand-only { display: none; }
+.branded .brand-only { display: inline; }
+.brand-logo { height: 38px; }
 .hbtn.primary { background: var(--lime); border-color: transparent; color: #17260a; font-weight: 600; }
 
 /* body */
@@ -267,7 +281,7 @@ details summary { cursor: pointer; font-size: 12.5px; color: var(--accent); font
 .gtabs { display: flex; flex-wrap: wrap; gap: 4px; }
 .gtabs button { border: 1px solid var(--line); background: var(--panel-2); border-radius: 999px; padding: 4px 11px; cursor: pointer; font-size: 12.5px; }
 .gtabs button[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
-.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--head); color: var(--head-ink); padding: 8px 14px; border-radius: 8px; z-index: 210; font-size: 13px; max-width: calc(100% - 32px); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--toast); color: var(--toast-ink); padding: 8px 14px; border-radius: 8px; z-index: 210; font-size: 13px; max-width: calc(100% - 32px); }
 .teacher { position: fixed; inset: 0; z-index: 150; background: var(--bg); overflow: auto; display: flex; flex-direction: column; gap: 10px;
   padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .teacher.drop { outline: 3px dashed var(--accent); outline-offset: -10px; }
@@ -377,7 +391,7 @@ details.card > summary { font-size: 13.5px; }
   #map { width: 120px; height: 160px; }
 }
 @media (max-width: 600px) { .hud { top: 46px; font-size: 12px; } .clockov { top: 84px; font-size: 18px; } }
-@media (max-width: 480px) { .cat, .mlist { grid-template-columns: 1fr; } .sum { grid-template-columns: repeat(2, 1fr); } .brand small { display: none; } }
+@media (max-width: 480px) { .cat, .mlist { grid-template-columns: 1fr; } .sum { grid-template-columns: repeat(2, 1fr); } .brand small { display: none; } .brand-logo { height: 28px; } .branded .brand-name { font-size: 14px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
@@ -385,7 +399,8 @@ details.card > summary { font-size: 13.5px; }
   <header class="top">
     <div class="brand">
       <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="9" width="24" height="13" rx="2" fill="none" stroke="#e6f1f3" stroke-width="2"/><path d="M4 15.5h24" stroke="#e6f1f3" stroke-width="2"/><rect x="11" y="5" width="10" height="4" rx="2" fill="#ff4fa3"/><circle cx="16" cy="18.5" r="2.4" fill="#3cc3d1"/><rect x="1" y="17" width="4" height="6" rx="1.5" fill="#8cc63f"/><rect x="27" y="17" width="4" height="6" rx="1.5" fill="#8cc63f"/><path d="M10 27c2-1.5 4-1.5 6 0s4 1.5 6 0" stroke="#3cc3d1" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
-      <div>Underwater IVD ROV Lab<small>2026–27 competition parameters</small></div>
+      <img class="brand-logo" src="assets/squareone-logo.png" alt="Square One Education Network" width="356" height="100">
+      <div class="brand-name">Underwater IVD ROV Lab<small>2026–27 competition parameters</small></div>
     </div>
     <div class="seg" role="group" aria-label="Mode">
       <button id="modeBuild" aria-pressed="true">Build</button>

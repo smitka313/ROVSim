@@ -50,7 +50,8 @@
     return out.length ? out : ['Small changes'];
   }
 
-  function journalHtml(J, team, rov) {
+  function journalHtml(J, team, rov, o) {
+    o = o || {};
     const vs = J.versions;
     const rows = vs.map(v => `<section><h2>v${v.v} <small>${new Date(v.at).toLocaleString()}</small></h2>
       <p><b>Changes:</b> ${v.changes.map(esc).join(' · ')}</p>
@@ -64,8 +65,8 @@
       h3{font-size:14px;margin:10px 0 4px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid #d2dde0;padding:4px 8px;text-align:left}th{background:#f3f7f8}
       .print{float:right;padding:6px 12px}@media print{.print{display:none}}</style></head><body>
       <button class="print" onclick="window.print()">Print</button>
-      <h1>Design log: ${esc(rov)}</h1><p>Team: ${esc(team || '—')} · Underwater IVD 2026–27 · ${vs.length} version${vs.length === 1 ? '' : 's'}, ${vs.reduce((a, v) => a + v.tests.length, 0)} tests</p>
-      <p>This log shows our design spiral: each version, what we changed, how we tested it, and what we learned.</p>${rows}</body></html>`;
+      ${o.logo ? `<img src="${o.logo}" alt="Square One Education Network" style="height:42px;display:block;margin-bottom:8px">` : ''}<h1>Design log: ${esc(rov)}</h1><p>Team: ${esc(team || '—')} · Underwater IVD 2026–27 · ${vs.length} version${vs.length === 1 ? '' : 's'}, ${vs.reduce((a, v) => a + v.tests.length, 0)} tests</p>
+      <p>This log shows our design spiral: each version, what we changed, how we tested it, and what we learned.</p>${rows}${o.note ? `<p style="color:#586a72;font-size:12px;margin-top:24px">${esc(o.note)}</p>` : ''}</body></html>`;
   }
 
   /* ---------- shop sheet ---------- */
@@ -143,8 +144,8 @@
       .warn{color:#b4441b;font-weight:600}.print{float:right;padding:6px 12px}@media print{.print{display:none}section{break-inside:avoid}}`;
     return `<!doctype html><html><head><meta charset="utf-8"><title>Shop sheet: ${esc(rov)}</title><style>${css}</style></head><body>
       ${o.embed ? '' : '<button class="print" onclick="window.print()">Print</button>'}
-      <h1>Shop sheet: ${esc(rov)}</h1>
-      <p class="meta">Team: ${esc(team || '—')} · Underwater IVD 2026–27 · made ${new Date().toLocaleDateString()}</p>
+      ${o.logo ? `<img src="${o.logo}" alt="Square One Education Network" style="height:42px;display:block;margin-bottom:8px">` : ''}<h1>Shop sheet: ${esc(rov)}</h1>
+      <p class="meta">Team: ${esc(team || '—')} · Underwater IVD 2026–27 · made ${new Date().toLocaleDateString()}${o.note ? ' · ' + esc(o.note) : ''}</p>
       <p>Size ${b.size.map(v => Math.round(v)).join(' × ')} in (W × H × L) · ${Math.round(mp.M)} g in air · net buoyancy ${Math.round(mp.net) >= 0 ? '+' : ''}${Math.round(mp.net)} g in fresh water · build cost ${fmt$(B.total)}</p>
       ${ins.ok ? '' : `<p class="warn">This design does not pass inspection yet: ${ins.items.filter(i => !i.pass && i.kind !== 'warn').map(i => esc(i.id)).join(', ')}.</p>`}
       <section><h2>1. Drawings</h2><p>Numbers match the parts list in section 3. Front of the ROV is at the top of the top view.</p><div class="views">

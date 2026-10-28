@@ -1964,7 +1964,7 @@
   $('#journal').addEventListener('click', e => {
     const t = e.target;
     if (t.id === 'jClose') { $('#journal').hidden = true; return; }
-    if (t.id === 'jExport') { if (!journal.versions.length) return toast('Test your ROV first to start the log.'); return saveFile(slug($('#rovName').value) + '-design-log.html', Extras.journalHtml(journal, $('#teamName').value.trim(), $('#rovName').value)); }
+    if (t.id === 'jExport') { if (!journal.versions.length) return toast('Test your ROV first to start the log.'); return saveFile(slug($('#rovName').value) + '-design-log.html', Extras.journalHtml(journal, $('#teamName').value.trim(), $('#rovName').value, { logo: logoData, note: isBranded() ? DISCLAIMER : '' })); }
     if (t.dataset.j === 'clearcmp') { jCompare = []; return renderJournal(); }
     if (t.dataset.jload) {
       const v = journal.versions.find(x => x.v === +t.dataset.jload);
@@ -1990,7 +1990,7 @@
 
   // Shop sheet shown inside the app; Print works on a normal web page, Save works everywhere
   function openShopSheet() {
-    const html = Extras.shopSheet(design, $('#teamName').value.trim(), $('#rovName').value, { embed: true });
+    const html = Extras.shopSheet(design, $('#teamName').value.trim(), $('#rovName').value, { embed: true, logo: logoData, note: isBranded() ? DISCLAIMER : '' });
     const inClaude = !!(window.claude && window.claude.use);
     $('#ssPrint').hidden = inClaude;
     $('#ssNote').textContent = inClaude ? 'To print, save a copy, then open the file and print it from your browser.' : '';
@@ -1999,7 +1999,7 @@
   }
   $('#ssClose').onclick = () => { $('#sheetView').hidden = true; };
   $('#ssPrint').onclick = () => { try { $('#ssFrame').contentWindow.print(); } catch (e) { toast('Printing is not available here. Save a copy and print that.'); } };
-  $('#ssSave').onclick = () => saveFile(slug($('#rovName').value) + '-shop-sheet.html', Extras.shopSheet(design, $('#teamName').value.trim(), $('#rovName').value));
+  $('#ssSave').onclick = () => saveFile(slug($('#rovName').value) + '-shop-sheet.html', Extras.shopSheet(design, $('#teamName').value.trim(), $('#rovName').value, { logo: logoData, note: isBranded() ? DISCLAIMER : '' }));
 
   // On-screen driving controls: shown for a student's first few pilot sessions, fades once they are driving
   let kgAuto = false, kgT = 0;
@@ -2255,7 +2255,7 @@
 
 
   function welcome() {
-    modal('Welcome to the Underwater IVD ROV Lab', `
+    modal('Welcome to the Underwater IVD ROV Lab', `<img class="welcome-logo" src="assets/squareone-logo.png" alt="Square One Education Network">
       <p>Design, build and test a virtual ROV for the 2026–27 Square One Underwater IVD competition.</p>
       <ol>
         <li><b>Build</b> your ROV step by step: frame, motors, camera, tools, trim${opts.junior ? '' : ', power'} and a final check.</li>
@@ -2268,7 +2268,7 @@
       <div class="card"><b>Which version fits your team?</b>
         <div class="row"><button class="btn ${opts.junior ? 'go' : ''}" id="wJunior">Grades 3–6: Junior mode</button><button class="btn ${opts.junior ? '' : 'go'}" id="wFull">Grades 7–12: Full mode</button></div>
         <p class="note">Junior mode uses simpler steps and words, skips the wiring step, and the fuse can’t blow. You can switch any time in the Menu.</p></div>
-      <p class="note">The physics are simplified. Real motors, pools and batteries vary, so test your real ROV too.</p>`,
+      <p class="note">The physics are simplified. Real motors, pools and batteries vary, so test your real ROV too. <span class="brand-only">${DISCLAIMER}</span></p>`,
       [{ label: 'Start building', cls: 'go', run: () => { store.set('welcomed', true); const v = ($('#wTeam') || {}).value; if (v != null) { $('#teamName').value = v.slice(0, 80); store.set('team', $('#teamName').value); } } }]);
     $('#wJunior').onclick = () => { if (!opts.junior) setJunior(true); $('#wJunior').classList.add('go'); $('#wFull').classList.remove('go'); };
     $('#wFull').onclick = () => { if (opts.junior) setJunior(false); $('#wFull').classList.add('go'); $('#wJunior').classList.remove('go'); };
@@ -2294,6 +2294,19 @@
   $('#teamName').addEventListener('input', e => store.set('team', e.target.value));
   $('#rovName').addEventListener('input', e => { design.name = e.target.value.slice(0, 60); store.set('design', design); });
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => buildGrid());
+  // Square One branding appears only where the logo file is shipped (the team's GitHub site)
+  let logoData = null;
+  (function () {
+    const img = new Image();
+    img.onload = () => {
+      document.documentElement.classList.add('branded');
+      try { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); logoData = c.toDataURL('image/png'); } catch (e) { logoData = null; }
+    };
+    img.src = 'assets/squareone-logo.png';
+  })();
+  const isBranded = () => document.documentElement.classList.contains('branded');
+  const DISCLAIMER = 'Built for Square One Underwater IVD teams. Not an official Square One product.';
+
   makeThumbs();
   buildGrid(); fitBuilder(); rebuildBuilder(); renderSide(); renderViewButtons();
   requestAnimationFrame(frame);
