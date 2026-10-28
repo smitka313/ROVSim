@@ -1126,6 +1126,8 @@
     if (def.views === 'cam' && hasCam) view = 'cam';
     camIdx = Math.min(camIdx, Math.max(0, rov.cameras.length - 1));
     $('#banner').hidden = true;
+    const canSlide = rov.thrusters.some(t => t.alloc.sway);
+    document.querySelectorAll('#touch .slide').forEach(b => b.classList.toggle('none', !canSlide));
     renderViewButtons();
     renderPilot();
   }
@@ -1326,7 +1328,7 @@
   const touchHeld = new Set();
   $('#touch').addEventListener('pointerdown', e => {
     const b = e.target.closest('button[data-k]'); if (!b) return;
-    e.preventDefault(); b.setPointerCapture(e.pointerId);
+    e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
     const k = b.dataset.k;
     if (k === 'claw') return Missions.toggleClaw(M);
     if (k === 'hang') return Missions.hangRing(M);
@@ -1343,6 +1345,11 @@
     c.surge = (k('w') || k('ArrowUp') || touchHeld.has('fwd') ? 1 : 0) - (k('s') || k('ArrowDown') || touchHeld.has('back') ? 1 : 0);
     c.yaw = (k('d') || k('ArrowRight') || touchHeld.has('yawR') ? 1 : 0) - (k('a') || k('ArrowLeft') || touchHeld.has('yawL') ? 1 : 0);
     c.sway = (k('e') || touchHeld.has('swayR') ? 1 : 0) - (k('q') || touchHeld.has('swayL') ? 1 : 0);
+    // explain once per mission why sliding does nothing without a sideways motor
+    if (c.sway && M && !M.swayHint && !M.rov.thrusters.some(t => t.alloc.sway)) {
+      M.swayHint = true;
+      pushEvent('This ROV has no sideways motor, so it can’t slide. Use turn (◀ ▶ or A/D) instead, or add one in Build: Motors → 4 motors.');
+    }
     c.heave = (k('r') || k('PageUp') || touchHeld.has('up') ? 1 : 0) - (k('f') || k('PageDown') || touchHeld.has('down') ? 1 : 0);
     // gamepad: left stick drive and turn, right stick strafe and up/down
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];

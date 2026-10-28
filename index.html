@@ -231,8 +231,14 @@ details summary { cursor: pointer; font-size: 12.5px; color: var(--accent); font
 .banner.bad { background: var(--warn-soft); border-color: var(--warn); }
 #map { right: calc(10px + env(safe-area-inset-right, 0px)); bottom: 10px; width: 170px; height: 220px; border-radius: 8px; background: rgba(6,24,30,.75); }
 .touch { bottom: 12px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 12px; pointer-events: none; }
-.tpad { display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(2, 42px); gap: 5px; pointer-events: auto; }
-.tpad button { border: 0; border-radius: 10px; background: rgba(6,24,30,.65); color: #fff; font-size: 13px; font-weight: 600; touch-action: none; user-select: none; -webkit-user-select: none; }
+.tpad { display: grid; grid-template-columns: repeat(3, 50px); grid-template-rows: repeat(2, 46px); gap: 5px; pointer-events: auto; }
+.tpad button { border: 0; border-radius: 10px; background: rgba(6,24,30,.7); color: #fff; font-size: 15px; font-weight: 700; touch-action: none; user-select: none; -webkit-user-select: none; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; padding: 0; }
+.tpad button small { font-size: 10px; font-weight: 600; opacity: .85; }
+.tpad button.slide { background: rgba(6,24,30,.5); }
+.tpad button.slide.none { opacity: .45; }
+.viewport:has(#touch:not([hidden])) #map { bottom: 122px; }
+.viewport:has(#touch:not([hidden])) .feed { bottom: 122px; max-width: calc(100% - 160px); }
+.viewport:has(#touch:not([hidden])) .feed div { font-size: 12px; padding: 4px 8px; }
 .tpad button.on { background: var(--accent); }
 .tpad .lbl { grid-column: 1 / -1; }
 .camtag { right: calc(10px + env(safe-area-inset-right, 0px)); top: 48px; font-family: var(--font-code); font-size: 12px; color: #fff; background: rgba(0,0,0,.45); padding: 2px 7px; border-radius: 5px; pointer-events: none; }
@@ -421,7 +427,7 @@ details.card > summary { font-size: 13.5px; }
       <div class="ov piplabel" id="pipLabel" hidden></div>
       <div class="ov hint" id="hint">Drag to turn the view · scroll or pinch to zoom · right-drag or two fingers to pan · click a joint, pipe or part to select it</div>
       <div class="ov touch" id="touch" hidden>
-        <div class="tpad" data-pad="left"><button data-k="yawL">⟲</button><button data-k="fwd">▲</button><button data-k="yawR">⟳</button><button data-k="swayL">◀</button><button data-k="back">▼</button><button data-k="swayR">▶</button></div>
+        <div class="tpad" data-pad="left"><button data-k="swayL" class="slide" aria-label="Slide left">◁<small>slide</small></button><button data-k="fwd" aria-label="Forward">▲<small>fwd</small></button><button data-k="swayR" class="slide" aria-label="Slide right">▷<small>slide</small></button><button data-k="yawL" aria-label="Turn left">◀<small>turn</small></button><button data-k="back" aria-label="Back">▼<small>back</small></button><button data-k="yawR" aria-label="Turn right">▶<small>turn</small></button></div>
         <div class="tpad" data-pad="right"><button data-k="claw">Claw</button><button data-k="up">Up</button><button data-k="hang">Hang</button><button data-k="cam">Cam</button><button data-k="down">Dive</button><button data-k="give">Give</button></div>
       </div>
     </section>
