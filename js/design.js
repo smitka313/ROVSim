@@ -376,7 +376,7 @@
     const ft = O('tether').ft + 3;
     add('Wire, Switches & Connectors', `${O('gauge').name.split(' (')[0]} 2-conductor wire (one pair per motor)`, Math.round(pairs * ft), O('gauge').perFt, `${pairs} pairs × ${ft} ft`);
     const C = O('control');
-    add('Wire, Switches & Connectors', C.name.split(' (')[0] + ' (one per motor)', pairs, C.perMotor);
+    add('Wire, Switches & Connectors', C.name.split(/,| \(/)[0] + ' (one per motor)', pairs, C.perMotor);
     add('Other Electronics', 'Control box enclosure, panel, labels', 1, C.box);
     add('Material Stock', O('tetherFloat').name, O('tetherFloat').price ? 1 : 0, O('tetherFloat').price);
     add('Misc Hardware', 'Zip ties, hose clamps, stainless fasteners', 1, 7.99);

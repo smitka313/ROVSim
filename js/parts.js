@@ -119,7 +119,7 @@
       batt:  { name: 'Monitor runs on its own battery or the 12 V box', price: 0, pass: true },
       wall:  { name: 'Monitor plugged into a wall outlet (110 V)', price: 0, pass: false, why: 'Rule 6.10: no 110 V AC devices in the pool area, including monitors and laptops on wall power.' } } },
     control: { label: 'Control box', rule: '', options: {
-      switch: { name: 'DPDT toggle switches (full on / off / reverse)', pass: true, perMotor: 5.99, box: 14.99 },
+      switch: { name: 'Momentary DPDT switches, (on)-off-(on), spring back to off', pass: true, perMotor: 5.99, box: 14.99 },
       pwm:    { name: 'PWM speed controllers + joystick (variable speed)', pass: true, perMotor: 18.99, box: 34.99 } } }
   };
 

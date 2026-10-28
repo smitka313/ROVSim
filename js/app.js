@@ -979,7 +979,6 @@
     const nd = t.closest('[data-nudge]'); if (nd) { const [ax, d] = nd.dataset.nudge.split(',').map(Number); return nudge(ax, d); }
     const pr = t.closest('[data-preset]'); if (pr) return choosePreset(pr.dataset.preset);
     const ms = t.closest('[data-mission]'); if (ms) { pickerOpen = false; return loadMission(ms.dataset.mission); }
-    const sw = t.closest('[data-sw]'); if (sw) return toggleSwitch(sw.dataset.sw);
     const a = t.closest('[data-act]'); if (a) return act(a.dataset.act, a);
   });
   let boxSnap = null;
@@ -1222,10 +1221,25 @@
     renderPilot();
   }
 
-  function toggleSwitch(id) {
-    const t = M.rov.thrusters.find(x => x.id === id); if (!t) return;
-    t.manual = t.manual === 0 ? 1 : t.manual === 1 ? -1 : 0;
+  // Momentary DPDT switches, (ON)-OFF-(ON): hold up for forward, down for reverse; they spring back to off.
+  const swHeld = new Map(); // pointerId -> thruster
+  function swPress(el, pointerId) {
+    const t = M && M.rov.thrusters.find(x => x.id === el.dataset.swid); if (!t) return;
+    t.manual = +el.dataset.swdir; swHeld.set(pointerId, t); el.classList.add('held');
   }
+  function swRelease(pointerId) {
+    const t = swHeld.get(pointerId); if (!t) return;
+    t.manual = 0; swHeld.delete(pointerId);
+    document.querySelectorAll('.sw-half.held').forEach(h => { if (![...swHeld.values()].some(x => x.id === h.dataset.swid && +h.dataset.swdir === x.manual)) h.classList.remove('held'); });
+  }
+  $('#sideBody').addEventListener('pointerdown', e => {
+    const h = e.target.closest('.sw-half'); if (!h) return;
+    e.preventDefault(); try { h.setPointerCapture(e.pointerId); } catch (err) { /* optional */ }
+    swPress(h, e.pointerId);
+  });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => $('#sideBody').addEventListener(ev, e => swRelease(e.pointerId)));
+  $('#sideBody').addEventListener('keydown', e => { const h = e.target.closest('.sw-half'); if (h && (e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); swPress(h, 'key'); } });
+  $('#sideBody').addEventListener('keyup', e => { if (e.target.closest('.sw-half') && (e.key === ' ' || e.key === 'Enter')) swRelease('key'); });
 
   // events feed
   function pushEvent(msg, cls) {
@@ -1679,15 +1693,18 @@
   function controlsTab() {
     const r = M.rov;
     const pwm = r.elec.pwm;
-    const sw = r.thrusters.map((t, i) => `<button class="sw" data-sw="${t.id}" id="sw-${t.id}" title="Click to flip this switch by hand: forward, reverse, off"><span class="lever"><i></i></span>${pwm ? '<span class="pbar"><i></i></span>' : ''}<small>M${i + 1} ${t.P.short}<br>${DIRS[design.parts.find(p => p.id === t.id).dir].label.toLowerCase()}</small></button>`).join('');
+    const sw = r.thrusters.map((t, i) => {
+      const nm = `M${i + 1} ${t.P.short}`, d = DIRS[design.parts.find(p => p.id === t.id).dir].label.toLowerCase();
+      return `<div class="sw" id="sw-${t.id}"><button class="sw-half" data-swid="${t.id}" data-swdir="1" aria-label="${nm}: hold for forward">▲</button><span class="lever"><i></i></span><button class="sw-half" data-swid="${t.id}" data-swdir="-1" aria-label="${nm}: hold for reverse">▼</button>${pwm ? '<span class="pbar"><i></i></span>' : ''}<small>${nm}<br>${d}</small></div>`;
+    }).join('');
     return `<div class="cbox">
-        <span class="lbl">Topside control box · ${pwm ? 'PWM speed control' : 'DPDT switches (full on / off / reverse)'}</span>
+        <span class="lbl">Topside control box · ${pwm ? 'PWM speed control' : 'momentary DPDT switches: (on)-off-(on)'}</span>
         <div class="sw-row">${sw || '<span>No thrusters on this ROV.</span>'}</div>
         <div class="meters"><div class="meter" id="mAmp"><span>Current</span><b>0.0 A</b></div><div class="meter" id="mVolt"><span>At motors</span><b>12.6 V</b></div><div class="meter" id="mFuse"><span>Fuse</span><b>OK</b></div></div>
         <div class="meters"><div class="meter" id="mDepth"><span>Depth</span><b>0.0 ft</b></div><div class="meter" id="mSpeed"><span>Speed</span><b>0.00</b></div><div class="meter" id="mTether"><span>Tether out</span><b>0 ft</b></div></div>
       </div>
       <div class="row"><button class="btn" data-act="fuse" id="btnFuse">Replace fuse</button><span class="note">Blown fuses take 15 s to replace during a heat.</span></div>
-      <p class="note">Each switch lights up when the simulator runs that motor. Click a switch to lock it on by hand (forward, reverse, off), like flipping a real toggle. With DPDT switches a motor is always full power or off, so fine moves take short taps.</p>
+      <p class="note">These work like the momentary DPDT switches on a real UIVD control box: hold ▲ to run that motor forward, hold ▼ for reverse, and let go and it springs back to off. Use two fingers to hold two switches at once. Each switch also moves when the keyboard, gamepad or touch pad runs that motor. A motor is always full power or off, so fine moves take short taps.</p>
       ${keysHtml()}`;
   }
 

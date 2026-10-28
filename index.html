@@ -189,7 +189,10 @@ details summary { cursor: pointer; font-size: 12.5px; color: var(--accent); font
 .cbox { background: #2b3136; color: #e8edf0; border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 .cbox .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: #a9b6bd; font-weight: 600; }
 .sw-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
-.sw { background: #1d2226; border: 1px solid #454d53; border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 4px; align-items: center; cursor: pointer; color: inherit; }
+.sw { background: #1d2226; border: 1px solid #454d53; border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 4px; align-items: center; color: inherit; user-select: none; -webkit-user-select: none; }
+.sw-half { width: 100%; border: 1px solid #454d53; background: #2b3238; color: #e8edf0; border-radius: 6px; padding: 6px 0; font-size: 14px; cursor: pointer; touch-action: none; }
+.sw-half.held { background: #3a4b52; border-color: #6fe08a; color: #6fe08a; }
+.sw-half[data-swdir="-1"].held { border-color: #ff9a6b; color: #ff9a6b; }
 .sw small { font-size: 10.5px; color: #c4cfd5; text-align: center; line-height: 1.2; }
 .sw .lever { width: 16px; height: 34px; border-radius: 8px; background: #11161a; position: relative; }
 .sw .lever i { position: absolute; left: 2px; width: 12px; height: 14px; border-radius: 6px; background: #c9ced2; top: 10px; transition: top .08s; }

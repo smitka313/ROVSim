@@ -123,7 +123,7 @@
     s += box(270, mid - 24, 110, 48, 'Connector', O('connector').name.split(' ').slice(0, 2).join(' '));
     s += `<rect x="548" y="${y0 - 6}" width="74" height="${n * rowH + 2}" rx="8" fill="#eef7e0" stroke="#8cc63f" stroke-dasharray="4 3"/><text x="585" y="${y0 + n * rowH + 14}" font-size="11" font-weight="700" text-anchor="middle">Tether</text><text x="585" y="${y0 + n * rowH + 27}" font-size="10.5" text-anchor="middle" fill="#40525a">${esc(short(O('gauge').name))}, ${O('tether').ft} ft</text>`;
     motors.forEach((p, i) => { const y = y0 + i * rowH + rowH / 2 - 4; s += wire(530, 650, y) + box(650, y - 12, 120, 24, `M${i + 1} · ${PARTS[p.type].short}`); });
-    s += box(410, mid - 34, 120, 68, 'Control box', `${motors.length} ${E.control === 'pwm' ? 'speed controls' : 'DPDT switches'}`, '#d9f0f2');
+    s += box(410, mid - 34, 120, 68, 'Control box', `${motors.length} ${E.control === 'pwm' ? 'speed controls' : 'momentary DPDT'}`, '#d9f0f2');
     return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px"><style>text{font-family:Segoe UI,system-ui,sans-serif}</style>${s}<text x="10" y="${H - 6}" font-size="11" fill="#40525a">Red = positive, black = negative. One wire pair per motor runs through the tether.</text></svg>`;
   }
 
