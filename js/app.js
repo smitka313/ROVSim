@@ -30,7 +30,9 @@
   let toastT;
   function toast(msg) {
     let t = $('.toast'); if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
-    t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2600);
+    t.textContent = msg; t.hidden = false; clearTimeout(toastT);
+    const h = $('#hint'); if (h) h.style.visibility = 'hidden';
+    toastT = setTimeout(() => { t.hidden = true; if (h) h.style.visibility = ''; }, 2600);
   }
   function modal(title, html, actions, wide) {
     $('#mTitle').textContent = title;
@@ -111,8 +113,10 @@
     bGrid.clear();
     const dark = isDark();
     bScene.background = new THREE.Color(dark ? 0x10222a : 0xd9e5e8);
-    const g1 = new THREE.GridHelper(48 * IN, 48, dark ? 0x2b4650 : 0xb9cbd0, dark ? 0x1d333b : 0xc9d8dc);
-    const g6 = new THREE.GridHelper(48 * IN, 8, dark ? 0x4f7682 : 0x86a3ab, dark ? 0x4f7682 : 0x86a3ab);
+    // grid colors are given darker in dark mode because the renderer's color conversion lightens them
+    const g1 = new THREE.GridHelper(48 * IN, 48, dark ? 0x0c1a1f : 0xb9cbd0, dark ? 0x0a161a : 0xc9d8dc);
+    const g6 = new THREE.GridHelper(48 * IN, 8, dark ? 0x1d3a44 : 0x86a3ab, dark ? 0x1d3a44 : 0x86a3ab);
+    if (dark) { g1.material.transparent = true; g1.material.opacity = 0.4; g6.material.transparent = true; g6.material.opacity = 0.75; }
     bGrid.add(g1, g6);
     const lbl = World.textSprite('FRONT', dark ? '#9fd8e0' : '#0f4a55', 0.18);
     lbl.rotation.x = -Math.PI / 2; lbl.position.set(0, 0.001, -24 * IN + 0.06); bGrid.add(lbl);
@@ -204,8 +208,31 @@
       [aD, aU].forEach(a => a.traverse(o => { if (o.material) { o.material.depthTest = false; } o.renderOrder = 7; }));
       bMarkers.add(aD, aU);
     }
+    if (opts.labels) design.parts.forEach(p => {
+      const P = PARTS[p.type]; if (!P) return;
+      const s = labelSprite(P.short);
+      s.position.set(p.at[0] * IN, p.at[1] * IN + 0.06, p.at[2] * IN);
+      bMarkers.add(s);
+    });
     if (placing && placing.ghost) bMarkers.add(placing.ghost);
     setHint();
+  }
+
+  const labelCache = {};
+  function labelSprite(text) {
+    if (!labelCache[text]) {
+      const c = document.createElement('canvas'), g = c.getContext('2d');
+      g.font = '600 30px Lexend, Segoe UI, sans-serif';
+      const w = Math.ceil(g.measureText(text).width) + 24; c.width = w; c.height = 46;
+      g.font = '600 30px Lexend, Segoe UI, sans-serif';
+      g.fillStyle = 'rgba(15,42,51,.88)'; g.beginPath(); g.moveTo(10, 0); g.arcTo(w, 0, w, 46, 10); g.arcTo(w, 46, 0, 46, 10); g.arcTo(0, 46, 0, 0, 10); g.arcTo(0, 0, w, 0, 10); g.fill();
+      g.fillStyle = '#ffffff'; g.textBaseline = 'middle'; g.fillText(text, 12, 24);
+      labelCache[text] = { tex: new THREE.CanvasTexture(c), aspect: w / 46 };
+    }
+    const L = labelCache[text];
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: L.tex, depthTest: false }));
+    s.scale.set(0.03 * L.aspect, 0.03, 1); s.renderOrder = 11;
+    return s;
   }
 
   function placeBCam() {
@@ -691,11 +718,37 @@
     return `<div class="stephead"><span class="sec-label">Step ${i + 1} of ${S.length}${opts.junior ? ' · Junior mode' : ''}</span><h3>${title}</h3><p class="note">${opts.junior && JR_GOALS[buildStep] ? JR_GOALS[buildStep] : goal}</p></div>`;
   };
 
+  // Small pictures of each part, drawn once from the same 3D models the builder uses
+  const thumbs = {};
+  function makeThumbs() {
+    try {
+      const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+      r.setPixelRatio(1); r.setSize(112, 112, false); r.outputEncoding = THREE.sRGBEncoding;
+      const sc = new THREE.Scene();
+      sc.add(new THREE.HemisphereLight(0xffffff, 0x667788, 1.0));
+      const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(1, 2, 2); sc.add(dl);
+      const cam = new THREE.PerspectiveCamera(30, 1, 0.005, 20);
+      Object.keys(PARTS).forEach(k => {
+        const P = PARTS[k];
+        const m = World.partMesh({ id: 'thumb', type: k, at: [0, 0, 0], dir: P.kind === 'float' ? 'right' : P.kind === 'thruster' ? 'right' : 'fwd', tilt: -10, qty: P.kind === 'weight' ? 3 : 1 }, 2);
+        sc.add(m);
+        const box = new THREE.Box3().setFromObject(m), c = box.getCenter(V3()), size = box.getSize(V3()).length();
+        cam.position.copy(c).add(V3(0.85, 0.55, 1.1).normalize().multiplyScalar(size * 1.75));
+        cam.lookAt(c);
+        r.setClearColor(0x000000, 0); r.clear();
+        r.render(sc, cam);
+        thumbs[k] = r.domElement.toDataURL('image/png');
+        sc.remove(m);
+      });
+      r.dispose(); if (r.forceContextLoss) r.forceContextLoss();
+    } catch (e) { /* pictures are optional */ }
+  }
+
   function partCards(filter, tags) {
     return `<div class="cat">${Object.entries(PARTS).filter(([, P]) => filter(P)).map(([k, P]) => {
       const lift = Math.round(P.cm3 - P.g);
       const extra = P.kind === 'thruster' ? (opts.junior ? ({ gph500: 'gentle push', gph750: 'medium push', gph1100: 'strong push' })[k] : `${P.thrust} N push · ${P.amps} A`) : P.kind === 'float' || P.kind === 'weight' ? (lift >= 0 ? `lifts ${lift} g` : `sinks ${-lift} g`) : `${P.g} g`;
-      return `<button class="pcard ${placing && placing.type === k ? 'on' : ''}" data-place="${k}" title="${esc(P.note)}"><b>${esc(P.short)}</b><span>${fmt$(P.price)} · ${extra}</span>${tags && tags[k] ? `<em>${tags[k]}</em>` : ''}</button>`;
+      return `<button class="pcard ${thumbs[k] ? 'has-img' : ''} ${placing && placing.type === k ? 'on' : ''}" data-place="${k}" title="${esc(P.note)}">${thumbs[k] ? `<img src="${thumbs[k]}" alt="" width="52" height="52">` : ''}<span class="pc-t"><b>${esc(P.short)}</b><span>${fmt$(P.price)} · ${extra}</span>${tags && tags[k] ? `<em>${tags[k]}</em>` : ''}</span></button>`;
     }).join('')}</div>`;
   }
 
@@ -831,7 +884,7 @@
     const ins = insView(), b = Design.bounds(design);
     const sz = b.size.map(v => Math.round(v));
     const row = i => `<li><span class="id">${esc(i.id)}</span><span>${esc(i.text)}${i.why ? `<span class="why">${esc(i.why)}</span>` : ''}${i.kind === 'self' ? `<label class="chk" style="margin-top:4px"><input type="checkbox" data-self="${i.id}" ${i.pass ? 'checked' : ''}> We checked this on our real ROV</label>` : ''}</span><span class="pill ${i.pass ? 'pass' : i.kind === 'warn' ? 'warn' : 'fail'}">${i.pass ? 'Pass' : i.kind === 'warn' ? 'Warning' : 'Fix'}</span></li>`;
-    const shop = `<div class="card"><span class="sec-label">Shop sheet</span><p class="note">Plans for building your real ROV: drawings, the pipe cut list, where each part goes, and the wiring.</p><div class="row"><button class="btn go" data-act="shopSheet">View shop sheet</button></div></div>`;
+    const shop = `<div class="card"><span class="sec-label">Shop sheet</span><p class="note">Plans for building your real ROV: drawings, the pipe cut list, where each part goes, and the wiring.</p><div class="row"><button class="btn go" data-act="shopSheet">View shop sheet</button><button class="btn" data-act="openLog">Design log</button></div></div>`;
     if (opts.junior) return stepHead(7, 'Ready to dive?', '') + `<div class="sec"><ul class="insp">${ins.items.map(row).join('')}</ul></div>
       <div class="card"><dl class="kv"><dt>Build cost</dt><dd>${fmt$(ins.budget.total)} of $2,000</dd><dt>Size</dt><dd>${sz.join(' × ')} in</dd></dl></div>${shop}`;
     return stepHead(7, 'Inspection and budget', 'This is the official 2027 inspection form plus a few build checks. Fix anything red, then take your ROV to the pool.') + shop + `
@@ -924,7 +977,7 @@
     const pa = t.closest('[data-part]'); if (pa) { sel = { kind: 'part', id: pa.dataset.part }; return afterSelect(); }
     const nd = t.closest('[data-nudge]'); if (nd) { const [ax, d] = nd.dataset.nudge.split(',').map(Number); return nudge(ax, d); }
     const pr = t.closest('[data-preset]'); if (pr) return choosePreset(pr.dataset.preset);
-    const ms = t.closest('[data-mission]'); if (ms) return loadMission(ms.dataset.mission);
+    const ms = t.closest('[data-mission]'); if (ms) { pickerOpen = false; return loadMission(ms.dataset.mission); }
     const sw = t.closest('[data-sw]'); if (sw) return toggleSwitch(sw.dataset.sw);
     const a = t.closest('[data-act]'); if (a) return act(a.dataset.act, a);
   });
@@ -976,6 +1029,9 @@
       case 'tank': setMode('pilot'); return loadMission('tank');
       case 'goPilot': return $('#modePilot').click();
       case 'goBuild': return setMode('build');
+      case 'togglePicker': pickerOpen = !pickerOpen; return renderPilot();
+      case 'openLog': return openJournal();
+      case 'names': return namesDialog();
       case 'shopSheet': return openShopSheet();
       case 'logRun': return logRun();
       case 'drillAgain': return loadMission(M.def.id);
@@ -1214,13 +1270,14 @@
   function renderViewButtons() {
     const vb = $('#vbtns');
     if (mode === 'build') {
-      vb.innerHTML = `<button class="vbtn" data-bv="undo" ${undoStack.length ? '' : 'disabled style="opacity:.45"'} title="Undo (Ctrl+Z)">↶ Undo</button><button class="vbtn" data-bv="redo" ${redoStack.length ? '' : 'disabled style="opacity:.45"'} title="Redo (Ctrl+Y)">↷ Redo</button><button class="vbtn" data-bv="fit">Fit</button><button class="vbtn" data-bv="front">Front</button><button class="vbtn" data-bv="side">Side</button><button class="vbtn" data-bv="top">Top</button>`;
+      vb.innerHTML = `<button class="vbtn" data-bv="undo" ${undoStack.length ? '' : 'disabled style="opacity:.45"'} title="Undo (Ctrl+Z)">↶ Undo</button><button class="vbtn" data-bv="redo" ${redoStack.length ? '' : 'disabled style="opacity:.45"'} title="Redo (Ctrl+Y)">↷ Redo</button><button class="vbtn" data-bv="labels" aria-pressed="${!!opts.labels}" title="Show part names on the model">Labels</button><button class="vbtn" data-bv="fit">Fit</button><button class="vbtn" data-bv="front">Front</button><button class="vbtn" data-bv="side">Side</button><button class="vbtn" data-bv="top">Top</button>`;
       return;
     }
     const inHeat = heat && heat.running && M.def.views === 'heat';
     const n = M ? M.rov.cameras.length : 0;
     const b = (v, label, extra) => `<button class="vbtn ${extra || ''}" data-v="${v}" aria-pressed="${(v === 'cam' && view === 'cam' && camIdx === 0) || (v === 'cam2' && view === 'cam' && camIdx === 1) || (v === view && v !== 'cam')}" ${viewAllowed(v) ? '' : 'disabled style="opacity:.4"'}>${label}</button>`;
     vb.innerHTML = (n ? b('cam', 'ROV camera') : '') + (n > 1 ? b('cam2', 'Camera 2') : '') + b('deck', 'Deck view', inHeat ? 'cost' : '') + (inHeat ? '' : b('chase', 'Chase')) +
+      `<button class="vbtn" data-v="keys" aria-pressed="${!$('#keyguide').hidden}" title="Show the driving controls">? Keys</button>` +
       (M.def.views === 'cam' ? '' : `<button class="vbtn" data-v="map" aria-pressed="${opts.map}" title="Spotter map: what your teammates on the deck can see">Map</button>`);
   }
   $('#vbtns').addEventListener('click', e => {
@@ -1228,10 +1285,12 @@
     if (b.dataset.bv) {
       if (b.dataset.bv === 'undo') return undo();
       if (b.dataset.bv === 'redo') return redo();
+      if (b.dataset.bv === 'labels') { opts.labels = !opts.labels; store.set('opts', opts); rebuildBuilder(); return renderViewButtons(); }
       if (b.dataset.bv === 'fit') fitBuilder();
       else { fitBuilder(); if (b.dataset.bv === 'front') { orbit.th = 0; orbit.ph = Math.PI / 2 - 0.05; } if (b.dataset.bv === 'side') { orbit.th = Math.PI / 2; orbit.ph = Math.PI / 2 - 0.05; } if (b.dataset.bv === 'top') { orbit.th = 0; orbit.ph = 0.09; } }
       return;
     }
+    if (b.dataset.v === 'keys') { showKeyGuide($('#keyguide').hidden, false); return; }
     if (b.dataset.v === 'map') { opts.map = !opts.map; store.set('opts', opts); renderViewButtons(); return; }
     setView(b.dataset.v);
   });
@@ -1330,6 +1389,7 @@
         acc -= h;
       }
       const hs = Math.hypot(M.rov.v.x, M.rov.v.z); if (hs > M.maxSpeed) M.maxSpeed = hs;
+      if (kgAuto && !$('#keyguide').hidden && (ctl.surge || ctl.sway || ctl.heave || ctl.yaw)) { kgT += dt; if (kgT > 8) showKeyGuide(false); }
       if (M.def.drill && !M.state.locked && !M.state.missing && !M.state.recorded) {
         if (!M.state.started && (ctl.surge || ctl.sway || ctl.heave || ctl.yaw)) M.state.started = true;
         if (M.state.started) M.state.t += dt;
@@ -1530,6 +1590,7 @@
     updatePilotLive(true);
   }
 
+  let pickerOpen = true;
   function missionTab() {
     const def = M.def;
     const ids = ['tank', 'practice', 'hoop', 'flag', 'carp', 'drag'];
@@ -1559,13 +1620,14 @@
     const res = resultsHtml(def.id);
     const sc = def.score(M);
     const sizeWarn = def.id === 'drag' && M.state.size && !M.state.size.ok ? `<p class="note" style="color:var(--warn)">This ROV is ${M.state.size.sz.map(v => Math.round(v)).join(' × ')} in. It must fit in a 24" cube to race. Make it smaller in Build, or build a separate drag racer.</p>` : '';
-    return `${list}
-      <div class="sec"><b>${esc(def.title)}</b><p class="mdesc">${esc(def.desc)}</p>${def.rules ? `<details><summary>Rules and scoring from the parameters</summary><ul class="rules">${def.rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>` : ''}${sizeWarn}</div>
+    const picker = `<button class="mbar" data-act="togglePicker" aria-expanded="${pickerOpen}"><span class="mbar-t"><small>${def.drill ? 'Pilot training' : 'Mission'}</small><b>${esc(def.title)}</b></span><span class="mbar-c">${pickerOpen ? 'Close ▴' : 'Change ▾'}</span></button>`;
+    return `${picker}${pickerOpen ? `<div class="picker">${list}</div>` : ''}
+      <p class="mdesc">${esc(def.desc)}</p>${sizeWarn}
       ${heatHtml}
       <div class="row">${actions}${hasClaw ? '<button class="btn" data-act="claw">Claw open/close (G)</button>' : ''}${def.id !== 'tank' && def.id !== 'drag' ? `<button class="btn" data-act="diver">${heat && heat.running ? 'Diver assist (−20)' : 'Diver assist'}</button>` : ''}</div>
       <div id="sheetBox">${def.drill ? drillSheet() : sheetHtml(sc)}</div>
-      ${res}
-      ${keysHtml()}`;
+      ${def.rules ? `<details><summary>Rules and scoring from the parameters</summary><ul class="rules">${def.rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>` : ''}
+      ${res}`;
   }
 
   function resultsHtml(id) {
@@ -1878,7 +1940,14 @@
     const t = e.target;
     if (t.dataset.jnote) { const v = journal.versions.find(x => x.v === +t.dataset.jnote); if (v) { v.note = t.value.slice(0, 2000); saveJournal(); } }
   });
-  $('#btnJournal').onclick = openJournal;
+  function namesDialog() {
+    modal('Team and ROV names', `<label class="sec" style="gap:4px"><span class="sec-label">Team number and names</span><input class="inp" id="nmTeam" value="${esc($('#teamName').value)}" placeholder="U2701: Ava, Ben, Cruz"></label>
+      <label class="sec" style="gap:4px"><span class="sec-label">ROV name</span><input class="inp" id="nmRov" value="${esc($('#rovName').value)}"></label>
+      <p class="note">These go on your shop sheet, design log and turn-in file.</p>`, [{ label: 'Cancel' }, { label: 'Save', cls: 'go', run: () => {
+        $('#teamName').value = $('#nmTeam').value.slice(0, 80); store.set('team', $('#teamName').value);
+        $('#rovName').value = $('#nmRov').value.slice(0, 60) || 'My ROV'; design.name = $('#rovName').value; store.set('design', design);
+      } }]);
+  }
 
   // Shop sheet shown inside the app; Print works on a normal web page, Save works everywhere
   function openShopSheet() {
@@ -1892,6 +1961,14 @@
   $('#ssClose').onclick = () => { $('#sheetView').hidden = true; };
   $('#ssPrint').onclick = () => { try { $('#ssFrame').contentWindow.print(); } catch (e) { toast('Printing is not available here. Save a copy and print that.'); } };
   $('#ssSave').onclick = () => saveFile(slug($('#rovName').value) + '-shop-sheet.html', Extras.shopSheet(design, $('#teamName').value.trim(), $('#rovName').value));
+
+  // On-screen driving controls: shown for a student's first few pilot sessions, fades once they are driving
+  let kgAuto = false, kgT = 0;
+  function showKeyGuide(show, auto) {
+    $('#keyguide').hidden = !show; kgAuto = !!auto; kgT = 0;
+    if (mode === 'pilot') renderViewButtons();
+  }
+  $('#keyguide').addEventListener('click', e => { if (e.target.closest('[data-kg="close"]')) showKeyGuide(false); });
 
   function setJunior(on) {
     opts.junior = on; store.set('opts', opts);
@@ -1916,7 +1993,10 @@
     if (m !== 'build' && placing) placing = null;
     $('#hud').hidden = m === 'build'; $('#monitor').hidden = true; $('#map').hidden = true; $('#clockOv').hidden = true; $('#banner').hidden = true;
     $('#touch').hidden = !(m === 'pilot' && opts.touch);
+    if (m !== 'pilot') $('#keyguide').hidden = true;
     if (m === 'pilot') {
+      const seen = store.get('keyguideSeen', 0);
+      if (seen < 3 && !opts.touch && window.innerWidth >= 700) { store.set('keyguideSeen', seen + 1); setTimeout(() => showKeyGuide(true, true), 50); }
       if (!M || pilotDirty) {
         if (heat && heat.running) toast('You changed the ROV, so the heat was stopped.');
         loadMission(M ? M.def.id : 'practice');
@@ -1938,12 +2018,15 @@
   /* ---------------- menu ---------------- */
   function renderMenu() {
     $('#menuPop').innerHTML = `
+      <button data-m="log">Design log</button>
+      <button data-m="guide">Engineering guide</button>
+      <button data-m="names">Team and ROV names…</button>
+      <div class="menu-sep"></div>
       <div class="menu-label">ROV design</div>
       <button data-m="open">Open a design file…</button>
       <button data-m="save">Save design file</button>
       <button data-m="budget">Download budget (CSV)</button>
-      <button data-m="shop">Shop sheet…</button>
-      <button data-m="log">Design log…</button>
+      <button data-m="shop">Shop sheet</button>
       <div class="menu-sep"></div><div class="menu-label">Options</div>
       <label class="chk"><input type="checkbox" data-o="sound" ${opts.sound ? 'checked' : ''}> Sound</label>
       <label class="chk"><input type="checkbox" data-o="murky" ${opts.murky ? 'checked' : ''}> Murky water (harder to see)</label>
@@ -1979,6 +2062,8 @@
     if (m === 'budget') budgetCsv();
     if (m === 'shop') act('shopSheet');
     if (m === 'log') openJournal();
+    if (m === 'guide') guide();
+    if (m === 'names') namesDialog();
     if (m === 'teacher') openTeacher();
     if (m === 'welcome') welcome();
     if (m === 'clear') modal('Clear all your heat scores?', '<p>Your ROV design stays. Only challenge scores are cleared.</p>', [{ label: 'Cancel' }, { label: 'Clear scores', cls: 'stop', run: () => { progress = {}; saveProgress(); renderSide(); } }]);
@@ -2003,7 +2088,7 @@
     modal('Turn in your work', `
       <p>This saves one file with your ROV design, budget, inspection and challenge scores. Give it to your teacher.</p>
       <div class="tbl-wrap"><table class="tbl"><tbody>
-        <tr><td>Team</td><td>${team ? esc(team) : '<span style="color:var(--warn)">Type your team number and names at the top first</span>'}</td></tr>
+        <tr><td>Team</td><td><input class="inp" id="tiTeam" value="${esc(team)}" placeholder="Team number and names" style="width:100%"></td></tr>
         <tr><td>ROV</td><td>${esc($('#rovName').value)}</td></tr>
         <tr><td>Budget</td><td>${fmt$(ins.budget.total)}</td></tr>
         <tr><td>Inspection</td><td>${ins.ok ? 'Pass' : ins.items.filter(i => !i.pass && i.kind !== 'warn').map(i => i.id).join(', ') + ' to fix'}</td></tr>
@@ -2016,6 +2101,9 @@
         <tr><td>#4 Drag race</td><td>${P.drag && P.drag.bestTime < 900 ? P.drag.bestTime.toFixed(2) + ' s, ' + (P.drag.rounds || 0) + ' rounds won' : 'not done'}</td></tr>
       </tbody></table></div>`, [{ label: 'Cancel' }, {
         label: 'Save turn-in file', cls: 'go', run: () => {
+          const team = (($('#tiTeam') || {}).value || '').trim().slice(0, 80);
+          $('#teamName').value = team; store.set('team', team);
+          if (!team) toast('Tip: add your team number and names so your teacher knows whose file this is.');
           const out = { app: 'uivd-rov-lab', kind: 'turn-in', v: 1, team, rov: $('#rovName').value, at: new Date().toISOString(), design, budget: { total: ins.budget.total, byLine: ins.budget.byLine }, inspection: { ok: ins.ok, fails: ins.items.filter(i => !i.pass && i.kind !== 'warn').map(i => i.id) }, trim: { net: Math.round(mp.net), pitch: mp.pitch, roll: mp.roll, mass: Math.round(mp.M) }, progress, junior: !!opts.junior,
             journal: journal.versions.map(v => ({ v: v.v, at: v.at, changes: v.changes, stats: v.stats, tests: v.tests, note: v.note })) };
           saveFile(slug(team || 'team') + '-' + slug($('#rovName').value) + '-turn-in.json', JSON.stringify(out, null, 1));
@@ -2125,7 +2213,7 @@
     modal('Engineering guide', `<div class="gtabs">${Object.keys(GUIDE).map(k => `<button data-g="${esc(k)}" aria-pressed="${k === topic}">${esc(k)}</button>`).join('')}</div><h3>${esc(topic)}</h3>${GUIDE[topic]}`, [{ label: 'Close' }], true);
     $('#mBody').querySelectorAll('[data-g]').forEach(b => b.onclick = () => guide(b.dataset.g));
   }
-  $('#btnGuide').onclick = () => guide();
+
 
   function welcome() {
     modal('Welcome to the Underwater IVD ROV Lab', `
@@ -2137,11 +2225,12 @@
         <li><b>Keep a design log.</b> Every test is saved with your design, so you can compare versions for your engineering journal.</li>
         <li><b>Build the real one</b> with the printable shop sheet, and <b>turn in</b> one file for your teacher.</li>
       </ol>
+      <label class="sec" style="gap:4px"><span class="sec-label">Team number and names</span><input class="inp" id="wTeam" value="${esc($('#teamName').value)}" placeholder="U2701: Ava, Ben, Cruz"></label>
       <div class="card"><b>Which version fits your team?</b>
         <div class="row"><button class="btn ${opts.junior ? 'go' : ''}" id="wJunior">Grades 3–6: Junior mode</button><button class="btn ${opts.junior ? '' : 'go'}" id="wFull">Grades 7–12: Full mode</button></div>
         <p class="note">Junior mode uses simpler steps and words, skips the wiring step, and the fuse can’t blow. You can switch any time in the Menu.</p></div>
       <p class="note">The physics are simplified. Real motors, pools and batteries vary, so test your real ROV too.</p>`,
-      [{ label: 'Start building', cls: 'go', run: () => store.set('welcomed', true) }]);
+      [{ label: 'Start building', cls: 'go', run: () => { store.set('welcomed', true); const v = ($('#wTeam') || {}).value; if (v != null) { $('#teamName').value = v.slice(0, 80); store.set('team', $('#teamName').value); } } }]);
     $('#wJunior').onclick = () => { if (!opts.junior) setJunior(true); $('#wJunior').classList.add('go'); $('#wFull').classList.remove('go'); };
     $('#wFull').onclick = () => { if (opts.junior) setJunior(false); $('#wFull').classList.add('go'); $('#wJunior').classList.remove('go'); };
   }
@@ -2166,6 +2255,7 @@
   $('#teamName').addEventListener('input', e => store.set('team', e.target.value));
   $('#rovName').addEventListener('input', e => { design.name = e.target.value.slice(0, 60); store.set('design', design); });
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => buildGrid());
+  makeThumbs();
   buildGrid(); fitBuilder(); rebuildBuilder(); renderSide(); renderViewButtons();
   requestAnimationFrame(frame);
   if (!store.get('welcomed', false)) welcome();

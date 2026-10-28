@@ -239,7 +239,7 @@ details summary { cursor: pointer; font-size: 12.5px; color: var(--accent); font
 
 /* popovers, modal, toast */
 .popwrap { position: relative; }
-.pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 120; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.22); padding: 6px; min-width: 250px; display: flex; flex-direction: column; }
+.pop { position: absolute; top: calc(100% + 6px); right: 0; z-index: 120; max-height: calc(100vh - 70px); overflow-y: auto; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.22); padding: 6px; min-width: 250px; display: flex; flex-direction: column; }
 .menu button { text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--ink); }
 .menu button:hover, .menu button:focus-visible { background: var(--chip); }
 .menu-label { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; padding: 8px 10px 4px; }
@@ -334,6 +334,27 @@ details.card > summary { font-size: 13.5px; }
 .tbl td.up { color: var(--good); font-weight: 600; } .tbl td.down { color: var(--warn); font-weight: 600; }
 @media (max-width: 700px) { .replay { grid-template-columns: 1fr; } .drills { grid-template-columns: repeat(3, 1fr); } }
 
+/* part pictures, mission bar, key guide */
+.pcard.has-img { flex-direction: row; align-items: center; gap: 8px; padding: 5px 8px 5px 5px; }
+.pcard img { width: 52px; height: 52px; flex: none; border-radius: 6px; background: var(--chip); object-fit: contain; }
+.pcard .pc-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; border: 1px solid var(--accent); background: var(--accent-soft); border-radius: var(--r); padding: 8px 12px; cursor: pointer; }
+.mbar-t { display: flex; flex-direction: column; min-width: 0; }
+.mbar-t small { font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
+.mbar-t b { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mbar-c { flex: none; font-size: 12.5px; color: var(--accent); font-weight: 600; }
+.picker { display: flex; flex-direction: column; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); }
+.keyguide { left: 12px; bottom: 12px; background: rgba(6,24,30,.86); color: #eaf4f6; border-radius: 10px; padding: 8px 10px 8px 12px; font-size: 12.5px; max-width: min(300px, calc(100% - 24px)); box-shadow: 0 6px 20px rgba(0,0,0,.3); }
+.kg-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+.kg-head button { border: 0; background: transparent; color: #eaf4f6; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.kg-grid { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; align-items: center; }
+.keyguide kbd { font-family: var(--font-code); font-size: 11px; background: #eaf4f6; color: #0f2a33; border-radius: 4px; padding: 1px 5px; margin-right: 2px; font-weight: 600; }
+.keyguide p { margin: 6px 0 0; color: #a9c7cf; font-size: 11.5px; }
+.keyguide:not([hidden]) ~ .feed, .feed:has(~ .keyguide:not([hidden])) { bottom: 210px; }
+.stat b, .stat small { white-space: normal; line-height: 1.2; }
+#rovName { width: 140px; }
+@media (max-width: 700px) { .keyguide p { display: none; } .keyguide { font-size: 12px; } }
+
 @media (max-width: 900px) {
   body { overflow: auto; }
   #app { height: auto; min-height: 100%; }
@@ -362,10 +383,8 @@ details.card > summary { font-size: 13.5px; }
       <button id="modePilot" aria-pressed="false">Pilot</button>
     </div>
     <div class="tools">
-      <input type="text" id="teamName" aria-label="Team number and names" placeholder="Team # and names">
-      <input type="text" id="rovName" aria-label="ROV name" value="Starter ROV">
-      <button class="hbtn" id="btnJournal">Design log</button>
-      <button class="hbtn" id="btnGuide">Engineering guide</button>
+      <input type="text" id="teamName" aria-label="Team number and names" hidden>
+      <input type="text" id="rovName" aria-label="ROV name" value="Starter ROV" title="ROV name">
       <button class="hbtn primary" id="btnTurnIn">Turn in</button>
       <div class="popwrap">
         <button class="hbtn" id="btnMenu" aria-haspopup="true" aria-expanded="false">Menu ▾</button>
@@ -385,6 +404,19 @@ details.card > summary { font-size: 13.5px; }
       <div class="ov banner" id="banner" hidden></div>
       <canvas class="ov" id="map" width="340" height="440" hidden aria-label="Spotter map: top view of the pool"></canvas>
       <div class="ov feed" id="feed" aria-live="polite"></div>
+      <div class="ov keyguide" id="keyguide" hidden aria-label="Driving controls">
+        <div class="kg-head"><b>Driving controls</b><button data-kg="close" aria-label="Hide the controls">×</button></div>
+        <div class="kg-grid">
+          <span><kbd>W</kbd><kbd>S</kbd></span><span>forward / back</span>
+          <span><kbd>A</kbd><kbd>D</kbd></span><span>turn left / right</span>
+          <span><kbd>R</kbd><kbd>F</kbd></span><span>up / dive</span>
+          <span><kbd>Q</kbd><kbd>E</kbd></span><span>slide sideways</span>
+          <span><kbd>G</kbd></span><span>claw</span>
+          <span><kbd>H</kbd> <kbd>T</kbd></span><span>hang ring / hand off</span>
+          <span><kbd>C</kbd></span><span>switch camera</span>
+        </div>
+        <p>Gamepad works too. Press <b>? Keys</b> to show this again.</p>
+      </div>
       <div class="ov btip" id="btip" hidden></div>
       <div class="ov piplabel" id="pipLabel" hidden></div>
       <div class="ov hint" id="hint">Drag to turn the view · scroll or pinch to zoom · right-drag or two fingers to pan · click a joint, pipe or part to select it</div>
