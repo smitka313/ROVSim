@@ -1270,6 +1270,20 @@
     camYaw = 0; camPitch = 0;
     renderViewButtons();
   }
+  // C key / View button: step through the cameras, then the deck and chase views.
+  // During a heat (and in camera-only drills) it stays on the ROV's cameras, so it never costs a peek.
+  function cycleView() {
+    const camsOnly = (M.def.views === 'heat' && heat && heat.running) || M.def.views === 'cam';
+    const order = ['cam', 'cam2'].concat(camsOnly ? [] : ['deck', 'chase']).filter(v => viewAllowed(v));
+    if (!order.length) return;
+    const cur = view === 'cam' ? (camIdx === 1 ? 'cam2' : 'cam') : view;
+    if (order.length === 1 && order[0] === cur) { pushEvent(camsOnly ? 'During a heat the pilot only has the ROV camera. Add a second camera in Build to switch between two.' : 'This is the only view available.'); return; }
+    setView(order[(order.indexOf(cur) + 1) % order.length]);
+    const names = { cam: M.rov.cameras.length > 1 ? 'Camera 1' : 'ROV camera', cam2: 'Camera 2', deck: 'Deck view', chase: 'Chase view' };
+    const now = view === 'cam' ? (camIdx === 1 ? 'cam2' : 'cam') : view;
+    pushEvent('View: ' + names[now]);
+  }
+
   function renderViewButtons() {
     const vb = $('#vbtns');
     if (mode === 'build') {
@@ -1316,7 +1330,7 @@
     keys.add(k);
     if (e.repeat) return;
     if (k === 'g') Missions.toggleClaw(M);
-    else if (k === 'c') { if (M.rov.cameras.length > 1 && view === 'cam') setView(camIdx === 0 ? 'cam2' : 'cam'); else setView('cam'); }
+    else if (k === 'c') cycleView();
     else if (k === 'v') setView('deck');
     else if (k === 'm') { opts.map = !opts.map; store.set('opts', opts); renderViewButtons(); }
     else {
@@ -1333,7 +1347,7 @@
     if (k === 'claw') return Missions.toggleClaw(M);
     if (k === 'hang') return Missions.hangRing(M);
     if (k === 'give') return Missions.handToTeammate(M);
-    if (k === 'cam') return setView(view === 'cam' && M.rov.cameras.length > 1 && camIdx === 0 ? 'cam2' : 'cam');
+    if (k === 'cam') return cycleView();
     touchHeld.add(k); b.classList.add('on');
   });
   const tUp = e => { const b = e.target.closest('button[data-k]'); if (!b) return; touchHeld.delete(b.dataset.k); b.classList.remove('on'); };
@@ -1363,7 +1377,7 @@
           if (i === 0) Missions.toggleClaw(M);
           if (i === 1) Missions.hangRing(M);
           if (i === 2) Missions.handToTeammate(M);
-          if (i === 3) setView(view === 'cam' && M.rov.cameras.length > 1 && camIdx === 0 ? 'cam2' : 'cam');
+          if (i === 3) cycleView();
         }
       });
       if (gp.buttons[6]) c.heave -= gp.buttons[6].value; if (gp.buttons[7]) c.heave += gp.buttons[7].value;
@@ -1657,7 +1671,7 @@
       <kbd>W / S</kbd><span>forward / back (or ↑ ↓)</span><kbd>A / D</kbd><span>turn left / right (or ← →)</span>
       <kbd>Q / E</kbd><span>strafe left / right (needs a sideways thruster)</span><kbd>R / F</kbd><span>up / dive (or Page Up / Page Down)</span>
       <kbd>G</kbd><span>claw open / close</span><kbd>H</kbd><span>hang a ring on the J hook</span><kbd>T</kbd><span>hand rings or sacs to a teammate</span>
-      <kbd>C</kbd><span>switch cameras</span><kbd>V</kbd><span>deck view (counts as a peek in a heat)</span><kbd>M</kbd><span>spotter map</span>
+      <kbd>C</kbd><span>next view: cameras, then deck and chase (cameras only during a heat)</span><kbd>V</kbd><span>deck view (counts as a peek in a heat)</span><kbd>M</kbd><span>spotter map</span>
       <kbd>Gamepad</kbd><span>left stick drive and turn, right stick strafe and up/down, A claw, B hang, X hand off, Y camera</span></div>
       <p class="note" style="margin-top:6px">The simulator works out which motors to run from where you mounted them and which way they push, the way your control box wiring would.</p></details>`;
   }
