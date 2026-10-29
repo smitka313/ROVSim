@@ -323,6 +323,23 @@ details summary { cursor: pointer; font-size: 12.5px; color: var(--accent); font
 .fit-ico line.i { stroke: #f7f4ec; stroke-width: 7; stroke-linecap: round; }
 .fit-ico .h { fill: #dcd7cb; stroke: var(--ink); stroke-opacity: .85; stroke-width: 1.5; }
 .sel-card { border-color: var(--accent); }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin: 10px 0; }
+.gcard { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.gcard.good { border-color: var(--good); box-shadow: 0 0 0 1px var(--good); }
+.gcard img { width: 100%; aspect-ratio: 16 / 10; object-fit: contain; background: linear-gradient(180deg, var(--accent-soft), transparent); display: block; }
+.gcard-b { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.gname { font-size: 15px; }
+.gtag { margin: 0; font-size: 12.5px; color: var(--muted); }
+.gbest span { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.gstats { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12px; margin: 0; }
+.gstats dt { color: var(--muted); } .gstats dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.gpros, .gcons { margin: 0; padding: 0; list-style: none; font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+.gpros li::before { content: "✓ "; color: var(--good); font-weight: 700; }
+.gcons li::before { content: "– "; color: var(--warn); font-weight: 700; }
+.gbtns { margin-top: auto; gap: 6px; }
+.gbtns .btn { flex: 1; justify-content: center; }
+.gbanner { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: var(--accent-soft); border-color: var(--accent); font-size: 13px; }
+.rov-strip { margin-top: 4px; }
 .stepper { display: inline-flex; align-items: center; gap: 8px; }
 .stepper b { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
 .stepper .btn { min-width: 34px; font-size: 16px; line-height: 1; }
@@ -522,13 +539,13 @@ details.card > summary { font-size: 13.5px; }
 
 <script src="vendor/three.min.js"></script>
 <script src="js/parts.js?v=2"></script>
-<script src="js/design.js?v=3"></script>
+<script src="js/design.js?v=4"></script>
 <script src="js/physics.js?v=4"></script>
 <script src="js/world.js?v=3"></script>
 <script src="js/missions.js?v=4"></script>
 <script src="js/extras.js?v=3"></script>
 <script src="js/audio.js?v=3"></script>
-<script src="js/app.js?v=4"></script>
+<script src="js/app.js?v=5"></script>
 
 </body>
 </html>

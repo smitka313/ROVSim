@@ -29,6 +29,8 @@
   const PRESETS = {
     starter: {
       label: 'Starter ROV (workshop style)',
+      gallery: { name: 'Starter ROV', tag: 'Simple and forgiving. A good first ROV.', best: ['flag', 'practice'],
+        pros: ['Easy to drive', 'Long prong carries 6 rings', 'Cheapest to build'], cons: ['Can’t slide sideways', 'Slowest of the four'] },
       make() {
         const d = blank('Starter ROV');
         setBox(d, { w: 12, h: 8, l: 14, top: true, bottom: false, mid: false, post: true });
@@ -47,6 +49,8 @@
     },
     flagbot: {
       label: 'Strafing ROV (4 motors, claw)',
+      gallery: { name: 'Strafing ROV', tag: 'Slides sideways and grabs with a claw.', best: ['flag', 'carp'],
+        pros: ['Sideways motor for lining up on hooks', 'Claw plus a spool fork', 'Second camera looks down at the claw'], cons: ['Claw holds one thing at a time', 'More switches to learn'] },
       make() {
         const d = blank('Strafing ROV');
         setBox(d, { w: 14, h: 8, l: 16, top: true, bottom: true, mid: false, post: true });
@@ -68,6 +72,8 @@
     },
     racer: {
       label: 'Drag racer (compact, 4 × 1100 GPH)',
+      gallery: { name: 'Drag Racer', tag: 'Four big motors, built for speed.', best: ['drag'],
+        pros: ['Fastest by far', 'Narrow and low drag'], cons: ['No tools or camera', 'Draws a lot of current: watch the fuse'] },
       make() {
         const d = blank('Drag Racer');
         setBox(d, { w: 10, h: 6, l: 18, top: true, bottom: true, mid: false });
@@ -78,6 +84,28 @@
         P('noodle12', [-5, 7.5, 0], 'back'); P('noodle12', [5, 7.5, 0], 'back');
         normalize(d);
         trimToNeutral(d, 10, [[-5, 0, -3], [5, 0, -3]]);
+        return d;
+      }
+    },
+    surveyor: {
+      label: 'Hoop surveyor (ruler, sideways motor)',
+      gallery: { name: 'Hoop Surveyor', tag: 'Steady, with a ruler across the front to measure the hoop.', best: ['hoop', 'practice'],
+        pros: ['24" ruler in view of the camera', 'Sideways motor to slide along the hoop', 'Wide and steady'], cons: ['Wide ruler catches on things', 'No pick-up tool'] },
+      make() {
+        const d = blank('Hoop Surveyor');
+        setBox(d, { w: 14, h: 8, l: 14, top: true, bottom: true, mid: false, post: true });
+        d.box = null;
+        d.pipes.push({ a: [-7, 0, -7], b: [-7, 0, -15] }, { a: [7, 0, -7], b: [7, 0, -15] }); // outriggers hold the ruler out where the camera can see it
+        const P = (type, at, dir, extra) => d.parts.push(Object.assign({ id: uid(), type, at, dir }, extra || {}));
+        P('gph500', [-8.5, 4, 7], 'fwd'); P('gph500', [8.5, 4, 7], 'fwd');
+        P('gph750', [0, 8, 0], 'down');
+        P('gph500', [0, 0, 0], 'right');
+        P('fishcam', [0, 7, -8], 'fwd', { tilt: -30 });
+        P('ruler24', [0, 0.5, -15], 'fwd');
+        P('noodle12', [-7, 9.5, 0], 'back'); P('noodle12', [7, 9.5, 0], 'back');
+        P('noodle6', [0, 9.5, 0], 'right'); // the ruler is heavy, so a little more float
+        normalize(d);
+        trimToNeutral(d, 0, [[-7, 0, 1], [7, 0, 1]]);
         return d;
       }
     },

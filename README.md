@@ -4,6 +4,7 @@ A browser-based simulator for the Square One **Underwater Innovative Vehicle Des
 
 ## Features
 
+- **Ready-made ROVs:** instead of building, pick one of four pre-built ROVs (Starter, Strafing ROV, Hoop Surveyor, Drag Racer) from the welcome screen, the Build panel or the Menu; pilot it right away or load it into Build to customize
 - **Guided build in 7 steps:** Frame → Motors → Camera → Tools → Trim → Power → Check
   - Box-frame sliders or hand editing in 3D: click a joint, then drag an arrow out to any pipe length (it snaps onto joints to close loops); − / + resizes a pipe
   - Choose the PVC connector at any joint (end cap, coupling, elbow, tee, 3-way corner, cross, 4-, 5- and 6-way), turn it, and grow pipes from its open sockets

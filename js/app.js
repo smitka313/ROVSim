@@ -948,7 +948,8 @@
         <label class="chk"><input type="checkbox" data-boxopt="post" ${B.post ? 'checked' : ''}> Post at the front center (a place for a prong or claw at mid height)</label>
         <p class="note">Your parts move with the frame when you resize it. Smaller frames cost less and turn faster; bigger ones are steadier and have room for more parts.</p>
       </div>` : `<div class="card"><span class="sec-label">Custom frame</span><p class="note">You changed the frame by hand, so the size sliders are off. Switching back to a box replaces your custom pipes.</p><button class="btn small" data-act="toBox">Switch back to a box frame</button></div>`;
-    return stepHead(1, 'Build the frame', 'The frame is what everything else attaches to. Most teams start with a simple box of ½" PVC pipe.') + boxCard + `
+    return stepHead(1, 'Build the frame', 'The frame is what everything else attaches to. Most teams start with a simple box of ½" PVC pipe.') +
+      `<div class="card gbanner"><span><b>Don’t want to build?</b> Pick one of 4 ready-made ROVs and go straight to piloting.</span><button class="btn small" data-act="gallery">Ready-made ROVs</button></div>` + boxCard + `
       ${frameSelCard() || `<details class="card" ${B ? '' : 'open'}><summary>Change it by hand</summary>
         <ol class="howto"><li>Click a <span class="dot-b"></span> blue joint (or anywhere on a pipe).</li><li>Pick the connector you want there.</li><li><b>Drag</b> an <span class="dot-o"></span> orange arrow out to the length you want, or click it for a ${pipeLen}" pipe.</li><li>To remove a pipe, click it and press Delete.</li></ol>
         <label class="chk"><input type="checkbox" id="mirror" ${mirror ? 'checked' : ''}> Mirror left and right (keeps the ROV balanced)</label>
@@ -959,7 +960,7 @@
       <details><summary>Cut list: ${Math.round(inches)} in of pipe, ${Object.values(fc).reduce((a, b) => a + b, 0)} fittings</summary>
         <p class="note" style="margin-top:6px">${design.pipes.length} pieces from ${Math.ceil(inches / 120)} × 10 ft stick${Math.ceil(inches / 120) === 1 ? '' : 's'}. Lengths are center to center of the fittings.</p>
         <div class="tbl-wrap"><table class="tbl"><tbody>${Object.keys(FITTINGS).filter(k => fc[k]).map(k => `<tr><td>${FITTINGS[k].name}</td><td class="n">${fc[k]}</td></tr>`).join('') || '<tr><td class="note">No fittings yet</td></tr>'}</tbody></table></div></details>`}
-      <details><summary>Or start from a ready-made ROV</summary><div class="row" style="margin-top:6px">${Object.entries(Design.PRESETS).map(([k, p]) => `<button class="btn small" data-preset="${k}">${esc(p.label.split(' (')[0])}</button>`).join('')}</div></details>`;
+`;
   }
 
   function motorsStep() {
@@ -1162,6 +1163,73 @@
       : 'Drag a part to move it · click a part to edit it · drag empty space to turn the view · scroll to zoom';
   }
 
+  /* ---------------- ready-made ROVs ---------------- */
+  const GALLERY = ['starter', 'flagbot', 'surveyor', 'racer'];
+  const galleryPics = {};
+  function galleryPic(k, d) {
+    if (galleryPics[k] !== undefined) return galleryPics[k];
+    galleryPics[k] = '';
+    try {
+      const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+      r.setPixelRatio(1); r.setSize(320, 200, false); r.outputEncoding = THREE.sRGBEncoding;
+      const sc = new THREE.Scene();
+      sc.add(new THREE.HemisphereLight(0xffffff, 0x667788, 1.0));
+      const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(1, 2, 2); sc.add(dl);
+      const m = World.buildRov(d); sc.add(m);
+      const box = new THREE.Box3().setFromObject(m), c = box.getCenter(V3()), size = box.getSize(V3()).length();
+      const cam = new THREE.PerspectiveCamera(28, 320 / 200, 0.005, 20);
+      cam.position.copy(c).add(V3(-1.0, 0.65, -1.15).normalize().multiplyScalar(size * 1.45)); // from the front-left, a little above
+      cam.lookAt(c);
+      r.setClearColor(0x000000, 0); r.render(sc, cam);
+      galleryPics[k] = r.domElement.toDataURL('image/png');
+      r.dispose(); if (r.forceContextLoss) r.forceContextLoss();
+    } catch (e) { /* pictures are optional */ }
+    return galleryPics[k];
+  }
+  function rovGallery() {
+    const here = mode === 'pilot' && M ? M.def.id : null;
+    const cards = GALLERY.map(k => {
+      const pre = Design.PRESETS[k], g = pre.gallery, d = pre.make();
+      const parts = d.parts.map(p => PARTS[p.type]);
+      const motors = parts.filter(P => P.kind === 'thruster');
+      const sideways = d.parts.some(p => PARTS[p.type].kind === 'thruster' && (p.dir === 'left' || p.dir === 'right'));
+      const tools = parts.filter(P => P.kind === 'tool').map(P => P.short);
+      const cams = parts.filter(P => P.kind === 'camera').length;
+      const net = Design.massProps(d).net, cost = Design.inspect(d).budget.total;
+      const pic = galleryPic(k, d);
+      const good = here && g.best.includes(here);
+      return `<div class="gcard${good ? ' good' : ''}">
+        ${pic ? `<img src="${pic}" alt="${esc(g.name)}">` : ''}
+        <div class="gcard-b">
+          <div class="row between"><b class="gname">${esc(g.name)}</b>${good ? '<span class="pill pass">Good for this mission</span>' : ''}</div>
+          <p class="gtag">${esc(g.tag)}</p>
+          <div class="chips gbest">${g.best.map(id => `<span>${esc(MISSIONS[id].short)}</span>`).join('')}</div>
+          <dl class="gstats"><dt>Motors</dt><dd>${motors.length}${sideways ? ' · slides sideways' : ''}</dd><dt>Tools</dt><dd>${tools.length ? esc(tools.join(', ')) : 'none'}</dd><dt>Cameras</dt><dd>${cams || 'none'}</dd>${opts.junior ? '' : `<dt>Buoyancy</dt><dd>${net >= 0 ? '+' : ''}${Math.round(net)} g</dd>`}<dt>Cost</dt><dd>${fmt$(cost)}</dd></dl>
+          <ul class="gpros">${g.pros.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+          <ul class="gcons">${g.cons.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+          <div class="row gbtns"><button class="btn go" data-gpilot="${k}">Pilot it now</button><button class="btn" data-gbuild="${k}">Customize in Build</button></div>
+        </div></div>`;
+    }).join('');
+    modal('Pick a ready-made ROV', `<p>Not ready to build from scratch? Choose one of these ROVs and start piloting. You can still change anything about it in Build later.</p>
+      <div class="gallery">${cards}</div>
+      <p class="note">Picking one replaces the ROV you have now. ↶ Undo in Build brings yours back.</p>`,
+      [{ label: 'Start from an empty frame', run: () => usePreset('empty', 'build') }, { label: 'Build my own', run: () => { setMode('build'); setStep('frame', true); } }], true);
+  }
+  function usePreset(k, then) {
+    commit();
+    const keepE = design.elec;
+    design = Design.PRESETS[k].make(); design.elec = Object.assign({}, keepE);
+    $('#rovName').value = design.name; sel = null; placing = null;
+    changed(); fitBuilder();
+    if (then === 'pilot') { $('#modePilot').click(); toast(`You’re piloting the ${design.name}. Change it any time in Build.`); }
+    else { setMode('build'); setStep('frame', true); toast(`${design.name} loaded. Change anything you like, step by step.`); }
+  }
+  $('#mBody').addEventListener('click', e => {
+    const a = e.target.closest('[data-gpilot],[data-gbuild]'); if (!a) return;
+    closeModal();
+    usePreset(a.dataset.gpilot || a.dataset.gbuild, a.dataset.gpilot ? 'pilot' : 'build');
+  });
+
   function choosePreset(k) {
     modal('Start from “' + Design.PRESETS[k].label + '”?', `<p>This replaces the ROV you are building. You can undo it with ↶.</p>`, [
       { label: 'Cancel' }, { label: 'Replace my ROV', cls: 'go', run: () => { commit(); const keepE = design.elec; design = Design.PRESETS[k].make(); design.elec = Object.assign({}, keepE); $('#rovName').value = design.name; sel = null; changed(); fitBuilder(); } }]);
@@ -1173,6 +1241,7 @@
       case 'redo': return redo();
       case 'del': return deleteSelected();
       case 'mirrorPart': return mirrorPart();
+      case 'gallery': return rovGallery();
       case 'fitTurn': { const cur = Design.fittings(design).find(f => sel && Design.eq(f.p, sel.p)); return cur && chooseFit(cur.type, true); }
       case 'fitAuto': return chooseFit(null);
       case 'splitHere': return splitHere();
@@ -1839,6 +1908,7 @@
       ${heatHtml}
       <div class="row">${actions}${hasClaw ? '<button class="btn" data-act="claw">Claw open/close (G)</button>' : ''}${def.id !== 'tank' && def.id !== 'drag' ? `<button class="btn" data-act="diver">${heat && heat.running ? 'Diver assist (−20)' : 'Diver assist'}</button>` : ''}</div>
       <div id="sheetBox">${def.drill ? drillSheet() : sheetHtml(sc)}</div>
+      ${heat && heat.running ? '' : `<div class="row between rov-strip"><span class="note">Piloting: <b>${esc(design.name)}</b></span><button class="btn small" data-act="gallery">Try a ready-made ROV</button></div>`}
       ${def.rules ? `<details><summary>Rules and scoring from the parameters</summary><ul class="rules">${def.rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>` : ''}
       ${res}`;
   }
@@ -2239,6 +2309,7 @@
       <button data-m="names">Team and ROV names…</button>
       <div class="menu-sep"></div>
       <div class="menu-label">ROV design</div>
+      <button data-m="gallery">Ready-made ROVs…</button>
       <button data-m="open">Open a design file…</button>
       <button data-m="save">Save design file</button>
       <button data-m="budget">Download budget (CSV)</button>
@@ -2282,6 +2353,7 @@
     if (m === 'names') namesDialog();
     if (m === 'teacher') openTeacher();
     if (m === 'welcome') welcome();
+    if (m === 'gallery') rovGallery();
     if (m === 'clear') modal('Clear all your heat scores?', '<p>Your ROV design stays. Only challenge scores are cleared.</p>', [{ label: 'Cancel' }, { label: 'Clear scores', cls: 'stop', run: () => { progress = {}; saveProgress(); renderSide(); } }]);
   });
   $('#openFile').addEventListener('change', async e => {
@@ -2431,11 +2503,12 @@
   }
 
 
+  function saveWelcome() { store.set('welcomed', true); const v = ($('#wTeam') || {}).value; if (v != null) { $('#teamName').value = v.slice(0, 80); store.set('team', $('#teamName').value); } }
   function welcome() {
     modal('Welcome to the Underwater IVD ROV Lab', `<img class="welcome-logo" src="assets/squareone-logo.png" alt="Square One Education Network">
       <p>Design, build and test a virtual ROV for the 2026–27 Square One Underwater IVD competition.</p>
       <ol>
-        <li><b>Build</b> your ROV step by step: frame, motors, camera, tools, trim${opts.junior ? '' : ', power'} and a final check.</li>
+        <li><b>Build</b> your ROV step by step: frame, motors, camera, tools, trim${opts.junior ? '' : ', power'} and a final check. Or <b>pick a ready-made ROV</b> and start piloting right away.</li>
         <li><b>Train</b> as a pilot with six short drills. Earn up to 3 stars on each.</li>
         <li><b>Compete</b> in heats of the Hula Hoop Hustle, the All Clear Flag, Carp Diem and the Drag Race, then watch the replay.</li>
         <li><b>Keep a design log.</b> Every test is saved with your design, so you can compare versions for your engineering journal.</li>
@@ -2446,7 +2519,7 @@
         <div class="row"><button class="btn ${opts.junior ? 'go' : ''}" id="wJunior">Grades 3–6: Junior mode</button><button class="btn ${opts.junior ? '' : 'go'}" id="wFull">Grades 7–12: Full mode</button></div>
         <p class="note">Junior mode uses simpler steps and words, skips the wiring step, and the fuse can’t blow. You can switch any time in the Menu.</p></div>
       <p class="note">The physics are simplified. Real motors, pools and batteries vary, so test your real ROV too. <span class="brand-only">${DISCLAIMER}</span></p>`,
-      [{ label: 'Start building', cls: 'go', run: () => { store.set('welcomed', true); const v = ($('#wTeam') || {}).value; if (v != null) { $('#teamName').value = v.slice(0, 80); store.set('team', $('#teamName').value); } } }]);
+      [{ label: 'Pick a ready-made ROV', run: () => { saveWelcome(); rovGallery(); } }, { label: 'Build my own ROV', cls: 'go', run: saveWelcome }]);
     $('#wJunior').onclick = () => { if (!opts.junior) setJunior(true); $('#wJunior').classList.add('go'); $('#wFull').classList.remove('go'); };
     $('#wFull').onclick = () => { if (opts.junior) setJunior(false); $('#wFull').classList.add('go'); $('#wJunior').classList.remove('go'); };
   }
