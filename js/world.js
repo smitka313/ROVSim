@@ -137,9 +137,17 @@
       const m = rod(V3(...p.a).multiplyScalar(IN), V3(...p.b).multiplyScalar(IN), U.PIPE.od / 2, pipeMat);
       m.userData.pipe = i; frame.add(m);
     });
+    // each fitting: a hub plus a socket for every outlet, so a tee looks like a tee and open sockets show
+    const hubGeo = new THREE.SphereGeometry(0.55 * IN, 12, 10);
     Design.fittings(design).forEach(f => {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(f.type === 'cap' ? 0.0135 : 0.0165, 12, 10), fitMat);
-      m.position.copy(V3(...f.p).multiplyScalar(IN)); frame.add(m);
+      const c = V3(...f.p).multiplyScalar(IN);
+      if (f.type === 'cap') {
+        const d = V3(...f.dirs[0]);
+        frame.add(rod(c.clone().addScaledVector(d, -0.3 * IN), c.clone().addScaledVector(d, 0.6 * IN), 0.53 * IN, fitMat));
+        return;
+      }
+      const hub = new THREE.Mesh(hubGeo, fitMat); hub.position.copy(c); frame.add(hub);
+      f.dirs.forEach(v => frame.add(rod(c, c.clone().addScaledVector(V3(...v), 0.85 * IN), 0.53 * IN, fitMat)));
     });
     const parts = new THREE.Group(); root.add(parts);
     const map = {};

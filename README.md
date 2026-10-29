@@ -5,7 +5,8 @@ A browser-based simulator for the Square One **Underwater Innovative Vehicle Des
 ## Features
 
 - **Guided build in 7 steps:** Frame → Motors → Camera → Tools → Trim → Power → Check
-  - Box-frame sliders or hand editing in 3D (click a joint, then an arrow)
+  - Box-frame sliders or hand editing in 3D: click a joint, then drag an arrow out to any pipe length (it snaps onto joints to close loops); − / + resizes a pipe
+  - Choose the PVC connector at any joint (end cap, coupling, elbow, tee, 3-way corner, cross, 4-, 5- and 6-way), turn it, and grow pipes from its open sockets
   - Click-to-place parts that snap onto pipes; drag to move them
   - Quick motor layouts with thrust arrows on the model
   - Live camera preview, buoyancy meter, balance view and auto-trim helper

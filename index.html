@@ -311,6 +311,21 @@ details summary { cursor: pointer; font-size: 12.5px; color: var(--accent); font
 .layouts { display: grid; grid-template-columns: 1fr; gap: 6px; }
 .pcard.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent); }
 .pcard em { font-style: normal; font-size: 11px; font-weight: 600; color: var(--accent); }
+.fit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
+.fit-card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); padding: 4px 4px 6px; display: flex; flex-direction: column; align-items: center; gap: 1px; cursor: pointer; color: var(--ink); min-width: 0; }
+.fit-card:hover:not(:disabled) { border-color: var(--accent); }
+.fit-card.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent); }
+.fit-card:disabled { opacity: .38; cursor: not-allowed; }
+.fit-card b { font-size: 11.5px; font-weight: 600; line-height: 1.2; text-align: center; }
+.fit-card span { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fit-ico { width: 40px; height: 40px; }
+.fit-ico line.o { stroke: var(--ink); stroke-width: 10; stroke-linecap: round; opacity: .85; }
+.fit-ico line.i { stroke: #f7f4ec; stroke-width: 7; stroke-linecap: round; }
+.fit-ico .h { fill: #dcd7cb; stroke: var(--ink); stroke-opacity: .85; stroke-width: 1.5; }
+.sel-card { border-color: var(--accent); }
+.stepper { display: inline-flex; align-items: center; gap: 8px; }
+.stepper b { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+.stepper .btn { min-width: 34px; font-size: 16px; line-height: 1; }
 .tip { margin: 0; font-size: 12.5px; line-height: 1.5; padding: 8px 10px; border-radius: 8px; background: var(--lime-soft); color: var(--ink); }
 .howto { margin: 6px 0; padding-left: 20px; font-size: 13px; line-height: 1.7; }
 .dot-b, .dot-o, .dot-r { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; }
@@ -506,14 +521,14 @@ details.card > summary { font-size: 13.5px; }
 </div>
 
 <script src="vendor/three.min.js"></script>
-<script src="js/parts.js?v=1"></script>
-<script src="js/design.js?v=2"></script>
+<script src="js/parts.js?v=2"></script>
+<script src="js/design.js?v=3"></script>
 <script src="js/physics.js?v=4"></script>
-<script src="js/world.js?v=2"></script>
+<script src="js/world.js?v=3"></script>
 <script src="js/missions.js?v=3"></script>
-<script src="js/extras.js?v=2"></script>
+<script src="js/extras.js?v=3"></script>
 <script src="js/audio.js?v=3"></script>
-<script src="js/app.js?v=3"></script>
+<script src="js/app.js?v=4"></script>
 
 </body>
 </html>

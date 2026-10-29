@@ -10,15 +10,15 @@
 
   // Fittings are chosen automatically from how pipes meet at a joint.
   const FITTINGS = {
-    cap:      { name: '½" end cap',                   price: 0.58, g: 8,  cm3: 6 },
-    coupling: { name: '½" coupling',                  price: 0.48, g: 12, cm3: 9 },
-    elbow:    { name: '½" 90° elbow',                 price: 0.62, g: 14, cm3: 10 },
-    tee:      { name: '½" tee',                       price: 0.74, g: 18, cm3: 13 },
-    corner3:  { name: '½" 3-way elbow (side outlet)', price: 1.98, g: 22, cm3: 16 },
-    cross:    { name: '½" cross',                     price: 2.39, g: 24, cm3: 17 },
-    side4:    { name: '½" 4-way tee (side outlet)',   price: 2.49, g: 26, cm3: 19 },
-    way5:     { name: '½" 5-way cross',               price: 3.29, g: 30, cm3: 22 },
-    way6:     { name: '½" 6-way cross',               price: 3.99, g: 34, cm3: 25 }
+    cap:      { name: '½" end cap', short: 'End cap',                   price: 0.58, g: 8,  cm3: 6 },
+    coupling: { name: '½" coupling', short: 'Coupling',                  price: 0.48, g: 12, cm3: 9 },
+    elbow:    { name: '½" 90° elbow', short: '90° elbow',                 price: 0.62, g: 14, cm3: 10 },
+    tee:      { name: '½" tee', short: 'Tee',                       price: 0.74, g: 18, cm3: 13 },
+    corner3:  { name: '½" 3-way elbow (side outlet)', short: '3-way corner', price: 1.98, g: 22, cm3: 16 },
+    cross:    { name: '½" cross', short: 'Cross',                     price: 2.39, g: 24, cm3: 17 },
+    side4:    { name: '½" 4-way tee (side outlet)', short: '4-way',   price: 2.49, g: 26, cm3: 19 },
+    way5:     { name: '½" 5-way cross', short: '5-way',               price: 3.29, g: 30, cm3: 22 },
+    way6:     { name: '½" 6-way cross', short: '6-way',               price: 3.99, g: 34, cm3: 25 }
   };
 
   /* Placeable parts. kind decides how the part behaves:

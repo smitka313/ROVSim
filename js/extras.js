@@ -9,7 +9,7 @@
   /* ---------- design log ---------- */
   function designHash(d) {
     const parts = d.parts.map(p => [p.type, p.at.join(','), p.dir, p.tilt || 0, p.qty || 1].join('|')).sort();
-    const str = JSON.stringify([d.pipes.map(p => [p.a, p.b].map(v => v.join(',')).sort().join('-')).sort(), parts, d.elec, !!d.sealed]);
+    const str = JSON.stringify([d.pipes.map(p => [p.a, p.b].map(v => v.join(',')).sort().join('-')).sort(), parts, d.elec, !!d.sealed].concat(d.fits && Object.keys(d.fits).length ? [Object.keys(d.fits).sort().map(k => k + ':' + d.fits[k].type + ':' + d.fits[k].dirs.map(v => v.join(',')).sort().join(';'))] : []));
     let h = 5381; for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
     return (h >>> 0).toString(36);
   }

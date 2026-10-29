@@ -146,6 +146,10 @@
       if (seen.has(k)) return false;
       seen.add(k); return true;
     });
+    if (d.fits) {
+      const J = joints(d);
+      for (const k of Object.keys(d.fits)) { const j = J.get(k); if (!j || !chosenFit(d, k, j.dirs)) delete d.fits[k]; }
+    }
     return d;
   }
 
@@ -232,13 +236,94 @@
     return n === 5 ? 'way5' : 'way6';
   }
 
+  /* Connector shapes: the socket directions of each fitting in one standard pose. A student can choose the
+     fitting at any joint (d.fits[key] = { type, dirs }); otherwise the simplest one that fits is used. */
+  const FIT_SHAPES = {
+    cap: [[1, 0, 0]],
+    coupling: [[1, 0, 0], [-1, 0, 0]],
+    elbow: [[1, 0, 0], [0, 1, 0]],
+    tee: [[1, 0, 0], [-1, 0, 0], [0, 1, 0]],
+    corner3: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+    cross: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]],
+    side4: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1]],
+    way5: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1]],
+    way6: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+  };
+  // all 24 ways to turn a cube, as functions on a direction
+  const ROTS = (() => {
+    const rx = v => [v[0], -v[2], v[1]], ry = v => [v[2], v[1], -v[0]], rz = v => [-v[1], v[0], v[2]];
+    const seen = new Map(), queue = [v => v];
+    while (queue.length) {
+      const f = queue.shift(), sig = key([...f([1, 0, 0]), ...f([0, 1, 0])]);
+      if (seen.has(sig)) continue;
+      seen.set(sig, f);
+      [rx, ry, rz].forEach(r => queue.push(v => r(f(v))));
+    }
+    return [...seen.values()];
+  })();
+  const dirSetKey = dirs => dirs.map(key).sort().join('|');
+  const POSES = {};
+  for (const t in FIT_SHAPES) {
+    const m = new Map();
+    ROTS.forEach(f => { const ds = FIT_SHAPES[t].map(f).map(v => v.map(x => x || 0)); m.set(dirSetKey(ds), ds); });
+    POSES[t] = [...m.values()];
+  }
+  const hasAll = (outlets, dirs) => dirs.every(d => outlets.some(o => eq(o, d)));
+
+  // Which fittings (and which poses of each) can go at a joint whose pipes leave in these directions
+  function fitOptions(dirs) {
+    const out = {};
+    for (const t in POSES) { const poses = POSES[t].filter(ds => hasAll(ds, dirs)); if (poses.length) out[t] = poses; }
+    return out;
+  }
+  function chosenFit(d, k, dirs) {
+    const f = d.fits && d.fits[k];
+    if (!f || !FITTINGS[f.type] || !Array.isArray(f.dirs) || f.dirs.length !== FIT_SHAPES[f.type].length || !hasAll(f.dirs, dirs)) return null;
+    return f;
+  }
+  function setFit(d, p, type, dirs) {
+    d.fits = d.fits || {};
+    if (!type) delete d.fits[key(p)]; else d.fits[key(p)] = { type, dirs: dirs.map(v => v.slice()) };
+  }
+  // the open sockets at a joint (only when a fitting was chosen there)
+  function openSockets(d, p) {
+    const j = joints(d).get(key(p)), dirs = j ? j.dirs : [];
+    const f = chosenFit(d, key(p), dirs);
+    return f ? f.dirs.filter(o => !dirs.some(x => eq(x, o))) : null;
+  }
+
   function fittings(d) {
     const out = [];
     for (const [k, j] of joints(d)) {
+      const c = chosenFit(d, k, j.dirs);
+      if (c) { out.push({ type: c.type, p: j.p, dirs: c.dirs, chosen: true }); continue; }
       const f = fittingFor(j.dirs, d.sealed);
-      if (f) out.push({ type: f, p: j.p, dirs: j.dirs });
+      if (f) out.push({ type: f, p: j.p, dirs: f === 'cap' ? j.dirs : POSES[f].find(ds => hasAll(ds, j.dirs)) || j.dirs });
     }
     return out;
+  }
+
+  // Cut a pipe in two at a point along it, so a fitting can go there
+  function splitPipe(d, i, pt) {
+    const p = d.pipes[i]; if (!p || eq(pt, p.a) || eq(pt, p.b) || !onSegment(pt, p.a, p.b)) return false;
+    d.pipes.splice(i, 1, { a: p.a, b: pt.slice() }, { a: pt.slice(), b: p.b });
+    return true;
+  }
+  // Change a pipe's length by moving whichever end is free (not joined to anything)
+  function resizePipe(d, i, inches) {
+    const p = d.pipes[i]; if (!p) return { ok: false, msg: 'Pick a pipe first.' };
+    const J = joints(d), freeA = J.get(key(p.a)).pipes.length === 1, freeB = J.get(key(p.b)).pipes.length === 1;
+    if (!freeA && !freeB) return { ok: false, msg: 'Both ends of this pipe are joined to other pipes. Delete it and add a new one instead.' };
+    const [fix, mov] = freeB ? ['a', 'b'] : ['b', 'a'];
+    const dir = sub(p[mov], p[fix]).map(Math.sign);
+    const end = p[fix].map((v, k) => v + dir[k] * inches);
+    const rest = d.pipes.filter((_, k) => k !== i);
+    if (overlaps({ pipes: rest }, p[fix], end)) return { ok: false, msg: 'That would run into another pipe.' };
+    const oldKey = key(p[mov]);
+    p[mov] = end;
+    if (d.fits && d.fits[oldKey]) { d.fits[key(end)] = d.fits[oldKey]; delete d.fits[oldKey]; } // an end cap moves with the end
+    normalize(d);
+    return { ok: true, end };
   }
 
   function pipeInches(d) { return d.pipes.reduce((s, p) => s + len(sub(p.b, p.a)), 0); }
@@ -444,10 +529,17 @@
     d.parts = obj.parts.filter(p => p && PARTS[p.type]).slice(0, 80).map(p => ({ id: uid(), type: p.type, at: (p.at || [0, 0, 0]).slice(0, 3).map(num), dir: DIRS[p.dir] ? p.dir : 'fwd', tilt: Math.max(-90, Math.min(30, +p.tilt || 0)), qty: Math.max(1, Math.min(12, Math.round(+p.qty || 1))) }));
     if (obj.elec) for (const k in ELECTRICAL) if (ELECTRICAL[k].options[obj.elec[k]]) d.elec[k] = obj.elec[k];
     if (obj.box && ['w', 'h', 'l'].every(k => Number.isFinite(+obj.box[k]))) d.box = { w: Math.max(6, Math.min(24, Math.round(+obj.box.w / 2) * 2)), h: Math.max(4, Math.min(16, Math.round(+obj.box.h))), l: Math.max(6, Math.min(28, Math.round(+obj.box.l / 2) * 2)), top: !!obj.box.top, bottom: !!obj.box.bottom, mid: !!obj.box.mid, post: !!obj.box.post };
+    if (obj.fits && typeof obj.fits === 'object') {
+      d.fits = {};
+      for (const k of Object.keys(obj.fits).slice(0, 400)) {
+        const f = obj.fits[k];
+        if (f && FIT_SHAPES[f.type] && Array.isArray(f.dirs)) d.fits[k.split(',').map(num).join(',')] = { type: f.type, dirs: f.dirs.slice(0, 6).map(v => (Array.isArray(v) ? v : []).slice(0, 3).map(x => Math.sign(+x || 0))) };
+      }
+    }
     if (obj.selfCheck) d.selfCheck = { '7.4': !!obj.selfCheck['7.4'], '7.5': !!obj.selfCheck['7.5'] };
     normalize(d);
     return d;
   }
 
-  Object.assign(U, { Design: { blank, PRESETS, boxPipes, setBox, resizeBox, nearestOnFrame, normalize, addPipe, removePipe, joints, fittings, fittingFor, pipeInches, distToFrame, elements, partCenter, toolTip, massProps, bounds, bom, inspect, fullPowerAmps, clone, validate, uid, key, eq } });
+  Object.assign(U, { Design: { blank, PRESETS, boxPipes, setBox, resizeBox, nearestOnFrame, normalize, overlaps, addPipe, removePipe, splitPipe, resizePipe, joints, fittings, fittingFor, fitOptions, setFit, openSockets, FIT_SHAPES, pipeInches, distToFrame, elements, partCenter, toolTip, massProps, bounds, bom, inspect, fullPowerAmps, clone, validate, uid, key, eq } });
 })();

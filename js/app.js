@@ -149,12 +149,16 @@
     const onFrame = buildStep === 'frame';
     const jm = new THREE.MeshBasicMaterial({ color: 0x1b7fd1, depthTest: false }), sm = new THREE.MeshBasicMaterial({ color: 0xff7a1a, depthTest: false });
     if (onFrame) {
-      for (const [k, j] of Design.joints(design)) {
-        const isSel = sel && sel.p && sel.kind !== 'part' && Design.key(sel.p) === k;
+      const jointList = [...Design.joints(design).values()].map(j => j.p);
+      if (!jointList.length) jointList.push([0, 0, 0]); // an empty frame: one spot to start the first pipe from
+      const jHit = new THREE.SphereGeometry(0.02, 8, 6), jHitMat = new THREE.MeshBasicMaterial({ visible: false });
+      for (const jp of jointList) {
+        const isSel = sel && sel.p && sel.kind !== 'part' && Design.key(sel.p) === Design.key(jp);
         const m = new THREE.Mesh(new THREE.SphereGeometry(isSel ? 0.012 : 0.0085, 12, 10), isSel ? sm : jm);
-        m.position.set(...j.p.map(v => v * IN));
-        m.userData.joint = j.p; m.renderOrder = 5;
-        bMarkers.add(m);
+        m.position.set(...jp.map(v => v * IN));
+        m.userData.joint = jp; m.renderOrder = 5;
+        const hit = new THREE.Mesh(jHit, jHitMat); hit.userData.joint = jp; hit.position.copy(m.position);
+        bMarkers.add(m, hit);
       }
       if (sel && sel.kind === 'pipe' && sel.p) {
         const m = new THREE.Mesh(new THREE.SphereGeometry(0.012, 12, 10), sm);
@@ -163,18 +167,20 @@
       // orange arrows: click one to grow a pipe that way
       if (sel && sel.p && sel.kind !== 'part') {
         const used = new Set();
+        const open = sel.kind === 'joint' ? Design.openSockets(design, sel.p) : null;
+        if (open) Object.values(DIRS).forEach(D => { if (!open.some(o => Design.eq(o, D.v))) used.add(D.v.join(',')); }); // a chosen fitting: only its open sockets
         const j = Design.joints(design).get(Design.key(sel.p));
         if (j) j.dirs.forEach(d => used.add(d.join(',')));
         if (sel.kind === 'pipe') { const p = design.pipes[sel.i]; if (p) { const d = p.b.map((v, i) => Math.sign(v - p.a[i])); used.add(d.join(',')); used.add(d.map(v => -v).join(',')); } }
         Object.entries(DIRS).forEach(([dk, D]) => {
           if (used.has(D.v.join(','))) return;
           const g = new THREE.Group();
-          const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.05, 8), handleMat);
+          const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.05, 8), handleMat);
           shaft.position.y = 0.035;
-          const cone = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.03, 12), handleMat);
-          cone.position.y = 0.07;
-          const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.09, 8), new THREE.MeshBasicMaterial({ visible: false }));
-          hit.position.y = 0.045;
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(0.015, 0.034, 12), handleMat);
+          cone.position.y = 0.072;
+          const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.1, 8), new THREE.MeshBasicMaterial({ visible: false }));
+          hit.position.y = 0.05;
           [shaft, cone, hit].forEach(m => { m.userData.handle = dk; m.renderOrder = 8; g.add(m); });
           g.position.set(...sel.p.map(v => v * IN));
           g.quaternion.setFromUnitVectors(V3(0, 1, 0), V3(...D.v));
@@ -267,6 +273,39 @@
   /* ---------------- builder input: orbit, pick, place, drag ---------------- */
   const ptrs = new Map(); let drag = null;
   const ray = new THREE.Raycaster();
+  // Ghost pipe shown while hovering or dragging an orange arrow
+  const pipeGhost = new THREE.Group(); pipeGhost.visible = false; pipeGhost.renderOrder = 10;
+  const ghostBad = new THREE.MeshBasicMaterial({ color: 0xe0362c, transparent: true, opacity: 0.55, depthTest: false });
+  let pipeDrag = null;
+  function showPipeGhost(dir, inches, note) {
+    if (!pipeGhost.parent) bScene.add(pipeGhost);
+    pipeGhost.clear();
+    const a = V3(...sel.p).multiplyScalar(IN), v = V3(...DIRS[dir].v), b = a.clone().addScaledVector(v, inches * IN);
+    const bad = Design.overlaps(design, sel.p, sel.p.map((x, i) => x + DIRS[dir].v[i] * inches));
+    const m = World.rod(a, b, U.PIPE.od / 2, bad ? ghostBad : ghostMat); m.renderOrder = 10; pipeGhost.add(m);
+    const s = labelSprite(bad ? 'Pipe in the way' : `${inches} in${note ? ' · ' + note : ''}`);
+    s.position.copy(b).add(V3(0, 0.035, 0)); pipeGhost.add(s);
+    pipeGhost.visible = true;
+    return !bad;
+  }
+  function hidePipeGhost() { pipeGhost.visible = false; }
+  // How long the pipe is when the pointer is here: the closest point on the arrow's line to the pointer ray
+  function dragLength(e, dir) {
+    rayFrom(e);
+    const u = V3(...DIRS[dir].v), P0 = V3(...sel.p).multiplyScalar(IN), w = ray.ray.direction, w0 = P0.clone().sub(ray.ray.origin);
+    const b = u.dot(w), den = 1 - b * b;
+    let inch = den < 0.02 ? pipeDrag.len : (b * w.dot(w0) - u.dot(w0)) / den / IN;
+    inch = Math.max(1, Math.min(36, Math.round(inch * 2) / 2));
+    // snap onto a joint that lies along this line, so loops close neatly
+    let note = '';
+    for (const j of Design.joints(design).values()) {
+      const off = j.p.map((x, i) => x - sel.p[i]), L = off[0] * u.x + off[1] * u.y + off[2] * u.z;
+      if (L <= 0 || Math.hypot(off[0] - u.x * L, off[1] - u.y * L, off[2] - u.z * L) > 1e-6) continue;
+      if (Math.abs(L - inch) <= 1) { inch = L; note = 'joins a joint'; break; }
+    }
+    return { inch, note };
+  }
+
   function rayFrom(e) {
     const r = canvas.getBoundingClientRect();
     ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), bCam);
@@ -321,7 +360,10 @@
     drag = { x: e.clientX, y: e.clientY, moved: 0, btn: e.button, shift: e.shiftKey };
     if (mode === 'build' && !placing && e.button === 0 && !e.shiftKey && ptrs.size === 1) {
       rayFrom(e);
-      const onHandle = ray.intersectObjects(bMarkers.children, true).some(h => h.object.userData.handle || h.object.userData.joint);
+      const hits = ray.intersectObjects(bMarkers.children, true);
+      const hd = hits.find(h => h.object.userData.handle);
+      if (hd && sel && sel.p) pipeDrag = { dir: hd.object.userData.handle, len: pipeLen, note: '' };
+      const onHandle = hits.some(h => h.object.userData.handle || h.object.userData.joint);
       const id = onHandle ? null : hitPart(e);
       if (id) partDrag = { id, moved: 0, committed: false };
     }
@@ -333,7 +375,7 @@
     const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ptrs.size === 2) {
-      partDrag = null;
+      partDrag = null; if (pipeDrag) { pipeDrag = null; hidePipeGhost(); }
       const other = [...ptrs.entries()].find(([id]) => id !== e.pointerId)[1];
       const d0 = Math.hypot(prev.x - other.x, prev.y - other.y), d1 = Math.hypot(e.clientX - other.x, e.clientY - other.y);
       if (mode === 'build') { orbit.r *= d0 / Math.max(1, d1); pan(dx / 2, dy / 2); }
@@ -344,6 +386,16 @@
     drag.moved += Math.abs(dx) + Math.abs(dy);
     if (mode !== 'build') { camYaw -= dx * 0.006; camPitch = Math.max(-1.2, Math.min(1.2, camPitch - dy * 0.006)); return; }
     if (placing) { if (drag.moved > 6) { orbit.th -= dx * 0.008; orbit.ph -= dy * 0.008; } builderHover(e); return; }
+    if (pipeDrag) {
+      if (drag.moved < 6) return;
+      const L = dragLength(e, pipeDrag.dir); pipeDrag.len = L.inch; pipeDrag.note = L.note;
+      pipeDrag.ok = showPipeGhost(pipeDrag.dir, L.inch, L.note);
+      const tip = $('#btip'), r = canvas.getBoundingClientRect();
+      tip.hidden = false; tip.textContent = pipeDrag.ok ? 'Let go to add the pipe' : 'Another pipe is in the way';
+      tip.style.left = (e.clientX - r.left + 14) + 'px'; tip.style.top = (e.clientY - r.top + 14) + 'px';
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
     if (partDrag) {
       partDrag.moved += Math.abs(dx) + Math.abs(dy);
       if (partDrag.moved < 5) return;
@@ -362,18 +414,22 @@
   });
   const endPtr = e => {
     if (mode === 'build' && ptrs.size === 1 && drag) {
-      if (partDrag) {
+      if (pipeDrag) {
+        hidePipeGhost(); canvas.style.cursor = '';
+        if (drag.moved < 6) addPipeAction(pipeDrag.dir);
+        else { pipeLen = pipeDrag.len; store.set('pipeLen', pipeLen); addPipeAction(pipeDrag.dir, pipeDrag.len); }
+      } else if (partDrag) {
         if (partDrag.committed) { canvas.style.cursor = ''; changed(); }
         else { sel = { kind: 'part', id: partDrag.id }; const P = PARTS[(design.parts.find(p => p.id === partDrag.id) || {}).type]; if (P) jumpToPartStep(P); afterSelect(); }
       } else if (drag.moved < 6) {
         if (placing) placeAt(e); else pick(e);
       }
     }
-    partDrag = null;
+    partDrag = null; pipeDrag = null;
     ptrs.delete(e.pointerId); if (!ptrs.size) drag = null;
   };
   canvas.addEventListener('pointerup', endPtr);
-  canvas.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); drag = null; partDrag = null; });
+  canvas.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); drag = null; partDrag = null; pipeDrag = null; hidePipeGhost(); });
   canvas.addEventListener('pointerleave', () => { $('#btip').hidden = true; });
   canvas.addEventListener('wheel', e => { e.preventDefault(); if (mode === 'build') orbit.r *= Math.exp(e.deltaY * 0.001); else camZoom = Math.max(0.4, Math.min(3, camZoom * Math.exp(e.deltaY * 0.001))); }, { passive: false });
   function pan(dx, dy) {
@@ -404,7 +460,7 @@
       const jj = ray.intersectObjects(bMarkers.children.filter(c => c.userData.joint), false)[0];
       const pid = hitPart(e);
       bMarkers.children.forEach(g => { if (g.userData.handle) g.children.forEach(m => { if (m.material.visible !== false) m.material = hh && hh.object.userData.handle === g.userData.handle ? handleHot : handleMat; }); });
-      if (hh) { label = `Add a ${pipeLen} in pipe going ${DIRS[hh.object.userData.handle].label.toLowerCase()}`; cursor = 'pointer'; }
+      if (hh) { showPipeGhost(hh.object.userData.handle, pipeLen); label = `Click: add a ${pipeLen} in pipe · drag: pick any length`; cursor = 'pointer'; }
       else if (jj) { label = 'Joint: click to grow pipes from here'; cursor = 'pointer'; }
       else if (pid) { const p = design.parts.find(q => q.id === pid); label = PARTS[p.type].short + ': drag to move, click to edit'; cursor = 'grab'; }
       else {
@@ -412,6 +468,7 @@
         if (ph) { const p = design.pipes[ph.object.userData.pipe]; label = `Pipe, ${Math.round(Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]))} in: click to select`; cursor = 'pointer'; }
       }
     }
+    if (!placing && !(label && label.startsWith('Click: add'))) hidePipeGhost();
     canvas.style.cursor = cursor;
     tip.hidden = !label;
     if (label) { tip.textContent = label; tip.style.left = (e.clientX - r.left + 14) + 'px'; tip.style.top = (e.clientY - r.top + 14) + 'px'; }
@@ -429,13 +486,16 @@
       const hp = ph.point.clone().divideScalar(IN);
       const ax = [0, 1, 2].find(i => p.a[i] !== p.b[i]);
       const pt = p.a.slice(); pt[ax] = Math.round(Math.max(Math.min(p.a[ax], p.b[ax]), Math.min(Math.max(p.a[ax], p.b[ax]), hp.getComponent(ax))));
-      sel = { kind: 'pipe', i: ph.object.userData.pipe, p: pt };
+      sel = Design.eq(pt, p.a) || Design.eq(pt, p.b) ? { kind: 'joint', p: pt } : { kind: 'pipe', i: ph.object.userData.pipe, p: pt };
       if (buildStep !== 'frame') setStep('frame', true);
       return afterSelect();
     }
     sel = null; afterSelect();
   }
-  function afterSelect() { rebuildBuilder(); renderSide(); }
+  function afterSelect() {
+    rebuildBuilder(); renderSide();
+    const c = document.querySelector('.sel-card'); if (c && c.scrollIntoView) c.scrollIntoView({ block: 'nearest' });
+  }
   function jumpToPartStep(P) {
     const k = P.kind === 'thruster' ? 'motors' : P.kind === 'camera' ? 'camera' : P.kind === 'tool' ? 'tools' : 'trim';
     if (buildStep !== k) setStep(k, true);
@@ -459,13 +519,14 @@
 
   /* ---------------- building actions ---------------- */
   const MIRROR_DIR = { left: 'right', right: 'left' };
-  function addPipeAction(dir) {
+  function addPipeAction(dir, len) {
     if (!sel || !sel.p) { toast('Click a joint or a spot on a pipe first.'); return; }
+    len = len || pipeLen;
     commit();
-    const r = Design.addPipe(design, sel.p, dir, pipeLen);
+    const r = Design.addPipe(design, sel.p, dir, len);
     if (!r.ok) { undoStack.pop(); toast(r.msg); return; }
-    if (mirror && sel.p[0] !== 0) Design.addPipe(design, [-sel.p[0], sel.p[1], sel.p[2]], MIRROR_DIR[dir] || dir, pipeLen);
-    else if (mirror && sel.p[0] === 0 && (dir === 'left' || dir === 'right')) Design.addPipe(design, sel.p, MIRROR_DIR[dir], pipeLen);
+    if (mirror && sel.p[0] !== 0) Design.addPipe(design, [-sel.p[0], sel.p[1], sel.p[2]], MIRROR_DIR[dir] || dir, len);
+    else if (mirror && sel.p[0] === 0 && (dir === 'left' || dir === 'right')) Design.addPipe(design, sel.p, MIRROR_DIR[dir], len);
     design.box = null;
     sel = { kind: 'joint', p: r.end };
     changed();
@@ -492,6 +553,56 @@
     }
     sel = null; changed();
   }
+  // Connectors: choose the fitting at the selected joint (and its mirror twin)
+  function jointDirs(p) { const j = Design.joints(design).get(Design.key(p)); return j ? j.dirs : []; }
+  function chooseFit(type, turn) {
+    if (!sel || sel.kind !== 'joint') return;
+    const dirs = jointDirs(sel.p), opts = Design.fitOptions(dirs);
+    if (type && !opts[type]) return toast('That fitting doesn’t match the pipes at this joint.');
+    commit();
+    let pose = null;
+    if (type) {
+      const cur = Design.fittings(design).find(f => Design.eq(f.p, sel.p));
+      const idx = cur && cur.type === type ? opts[type].findIndex(ds => ds.length === cur.dirs.length && ds.every(v => cur.dirs.some(c => Design.eq(c, v)))) : -1;
+      pose = opts[type][turn ? (idx + 1) % opts[type].length : Math.max(0, idx)];
+    }
+    Design.setFit(design, sel.p, type, pose || []);
+    if (mirror && sel.p[0] !== 0) {
+      const mp = [-sel.p[0], sel.p[1], sel.p[2]], mo = Design.fitOptions(jointDirs(mp));
+      const mpose = pose && pose.map(v => [-v[0] || 0, v[1], v[2]]);
+      if (!type) Design.setFit(design, mp, null);
+      else if (mo[type] && mo[type].some(ds => ds.every(v => mpose.some(m => Design.eq(m, v))))) Design.setFit(design, mp, type, mpose);
+    }
+    changed();
+  }
+  function splitHere() {
+    if (!sel || sel.kind !== 'pipe') return;
+    commit();
+    if (!Design.splitPipe(design, sel.i, sel.p)) { undoStack.pop(); return; }
+    if (mirror && sel.p[0] !== 0) {
+      const mp = [-sel.p[0], sel.p[1], sel.p[2]];
+      const mi = design.pipes.findIndex(q => !Design.eq(q.a, mp) && !Design.eq(q.b, mp) && Design.distToFrame({ pipes: [q] }, mp) < 1e-6);
+      if (mi >= 0) Design.splitPipe(design, mi, mp);
+    }
+    design.box = null;
+    sel = { kind: 'joint', p: sel.p.slice() };
+    changed();
+  }
+  function pipeLenStep(d) {
+    if (!sel || sel.kind !== 'pipe') return;
+    const p = design.pipes[sel.i]; if (!p) return;
+    const L = Math.round(Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]) * 2) / 2;
+    if (L + d < 1) return toast('That’s as short as a pipe can go.');
+    commit();
+    const r = Design.resizePipe(design, sel.i, L + d);
+    if (!r.ok) { undoStack.pop(); return toast(r.msg); }
+    design.box = null;
+    const i = design.pipes.findIndex(q => Design.eq(q.a, r.end) || Design.eq(q.b, r.end)), q = design.pipes[i];
+    sel = { kind: 'pipe', i, p: q.a.map((v, k) => Math.round((v + q.b[k]) / 2)) }; // keep a spot in the middle selected
+    if (Design.eq(sel.p, q.a) || Design.eq(sel.p, q.b)) sel.p = r.end.slice();
+    changed();
+  }
+
   function selPart() { return sel && sel.kind === 'part' ? design.parts.find(p => p.id === sel.id) : null; }
   function nudge(axis, d) {
     const p = selPart(); if (!p) return;
@@ -785,6 +896,43 @@
     </div>`;
   }
 
+  // Little drawings of each connector, from the same socket directions the 3D model uses
+  function fitIcon(type) {
+    const S = Design.FIT_SHAPES[type], pr = v => [(v[0] - v[2]) * 0.87, (v[0] + v[2]) * 0.5 - v[1]];
+    const arms = S.map(v => ({ v, d: v[0] + v[2] - v[1] * 0.01 })).sort((a, b) => a.d - b.d);
+    const line = (v, cls) => { const [x, y] = pr(v); return `<line x1="22" y1="22" x2="${22 + x * 14}" y2="${22 + y * 14}" class="${cls}"/>`; };
+    return `<svg class="fit-ico" viewBox="0 0 44 44" aria-hidden="true">${arms.map(a => line(a.v, 'o') + line(a.v, 'i')).join('')}${type === 'cap' ? '' : '<circle cx="22" cy="22" r="6.5" class="h"/>'}</svg>`;
+  }
+  function frameSelCard() {
+    if (!sel || sel.kind === 'part') return '';
+    const lenChips = `<div class="row"><span class="note">Click length</span><div class="chips">${[2, 3, 4, 6, 8, 10, 12].map(n => `<button data-len="${n}" aria-pressed="${n === pipeLen}">${n}"</button>`).join('')}</div></div>`;
+    const mirrorBox = `<label class="chk"><input type="checkbox" id="mirror" ${mirror ? 'checked' : ''}> Mirror left and right (keeps the ROV balanced)</label>`;
+    if (sel.kind === 'pipe') {
+      const p = design.pipes[sel.i]; if (!p) return '';
+      const L = Math.round(Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2]) * 2) / 2;
+      return `<div class="card sel-card"><span class="sec-label">Selected pipe</span>
+        <div class="row between"><span>Length</span><span class="stepper"><button class="btn small" data-act="pipeShorter" aria-label="Shorter">−</button><b>${L} in</b><button class="btn small" data-act="pipeLonger" aria-label="Longer">+</button></span></div>
+        <p class="note">− and + move the pipe’s loose end. Use an orange arrow to branch a new pipe from this spot.</p>
+        <div class="row"><button class="btn small" data-act="splitHere">Put a connector here</button><button class="btn small" data-act="del">Delete pipe</button></div>
+        ${lenChips}${mirrorBox}</div>`;
+    }
+    const dirs = jointDirs(sel.p), opts = Design.fitOptions(dirs);
+    const cur = Design.fittings(design).find(f => Design.eq(f.p, sel.p));
+    const chosen = cur && cur.chosen, curType = cur ? cur.type : null;
+    const order = ['cap', 'coupling', 'elbow', 'tee', 'corner3', 'cross', 'side4', 'way5', 'way6'];
+    const cards = order.map(t => {
+      const ok = !!opts[t], on = curType === t;
+      return `<button class="fit-card${on ? ' on' : ''}" data-fit="${t}" ${ok ? '' : 'disabled'} aria-pressed="${on}" title="${esc(FITTINGS[t].name)}${ok ? '' : ': doesn’t match the pipes here'}">${fitIcon(t)}<b>${FITTINGS[t].short}</b><span>${fmt$(FITTINGS[t].price)}</span></button>`;
+    }).join('');
+    const turns = chosen && opts[curType] ? opts[curType].length : 0;
+    const open = Design.openSockets(design, sel.p);
+    return `<div class="card sel-card"><span class="sec-label">Connector at this joint</span>
+      <p class="note">${!dirs.length ? 'Drag an orange arrow to lay your first pipe.' : chosen ? (open && open.length ? `Orange arrows show the ${open.length} open socket${open.length === 1 ? '' : 's'}: drag one out to add a pipe.` : 'Every socket has a pipe in it.') : curType ? `Picked for you: <b>${FITTINGS[curType].short}</b>. Choose a bigger one to leave sockets open for later.` : 'An open pipe end. Add an end cap, or pick a connector to branch from here.'}</p>
+      ${dirs.length ? `<div class="fit-grid">${cards}</div>
+      <div class="row">${turns > 1 ? '<button class="btn small" data-act="fitTurn">↻ Turn it</button>' : ''}${chosen ? '<button class="btn small" data-act="fitAuto">Let the app pick</button>' : ''}<button class="btn small" data-act="del">Delete joint and its pipes</button></div>` : ''}
+      ${lenChips}${mirrorBox}</div>`;
+  }
+
   function frameStep() {
     const B = design.box;
     const fc = {};
@@ -801,12 +949,10 @@
         <p class="note">Your parts move with the frame when you resize it. Smaller frames cost less and turn faster; bigger ones are steadier and have room for more parts.</p>
       </div>` : `<div class="card"><span class="sec-label">Custom frame</span><p class="note">You changed the frame by hand, so the size sliders are off. Switching back to a box replaces your custom pipes.</p><button class="btn small" data-act="toBox">Switch back to a box frame</button></div>`;
     return stepHead(1, 'Build the frame', 'The frame is what everything else attaches to. Most teams start with a simple box of ½" PVC pipe.') + boxCard + `
-      <details class="card" ${B ? '' : 'open'}><summary>Change it by hand</summary>
-        <ol class="howto"><li>Click a <span class="dot-b"></span> blue joint (or anywhere on a pipe).</li><li>Click an <span class="dot-o"></span> orange arrow to add a pipe that way.</li><li>To remove a pipe, click it and press Delete.</li></ol>
-        <div class="row"><span class="note">New pipe length</span><div class="chips">${[2, 3, 4, 6, 8, 10, 12].map(n => `<button data-len="${n}" aria-pressed="${n === pipeLen}">${n}"</button>`).join('')}</div></div>
+      ${frameSelCard() || `<details class="card" ${B ? '' : 'open'}><summary>Change it by hand</summary>
+        <ol class="howto"><li>Click a <span class="dot-b"></span> blue joint (or anywhere on a pipe).</li><li>Pick the connector you want there.</li><li><b>Drag</b> an <span class="dot-o"></span> orange arrow out to the length you want, or click it for a ${pipeLen}" pipe.</li><li>To remove a pipe, click it and press Delete.</li></ol>
         <label class="chk"><input type="checkbox" id="mirror" ${mirror ? 'checked' : ''}> Mirror left and right (keeps the ROV balanced)</label>
-        ${sel && sel.kind !== 'part' ? `<button class="btn small" data-act="del">Delete the selected ${sel.kind === 'joint' ? 'joint and its pipes' : 'pipe'}</button>` : ''}
-      </details>
+      </details>`}
       ${opts.junior ? '' : `<div class="sec"><span class="sec-label">Pipes: flooded or sealed?</span>
         <label class="chk"><input type="radio" name="seal" value="0" ${design.sealed ? '' : 'checked'}> <span><b>Flooded</b>: drill holes so water fills the pipes. Simple and reliable; the frame sinks a little.</span></label>
         <label class="chk"><input type="radio" name="seal" value="1" ${design.sealed ? 'checked' : ''}> <span><b>Sealed</b>: glue and cap everything so air stays inside. The frame floats, but one leak changes everything.</span></label></div>
@@ -972,6 +1118,7 @@
     const pl = t.closest('[data-place]'); if (pl) { if (placing && placing.type === pl.dataset.place) return stopPlacing(); return startPlacing(pl.dataset.place); }
     const ly = t.closest('[data-layout]'); if (ly) return applyMotorLayout(ly.dataset.layout, motorType);
     const mt = t.closest('[data-mtype]'); if (mt) { motorType = mt.dataset.mtype; store.set('motorType', motorType); return renderBuild(); }
+    const ft = t.closest('[data-fit]'); if (ft) return chooseFit(ft.dataset.fit);
     const ln = t.closest('[data-len]'); if (ln) { pipeLen = +ln.dataset.len; store.set('pipeLen', pipeLen); return renderBuild(); }
     const dr = t.closest('[data-dir]'); if (dr) return setPartDir(dr.dataset.dir);
     const qy = t.closest('[data-qty]'); if (qy) { const p = selPart(); if (p) { commit(); p.qty = Math.max(1, Math.min(12, (p.qty || 1) + +qy.dataset.qty)); changed(); } return; }
@@ -1011,7 +1158,7 @@
     const h = $('#hint'); if (!h) return;
     if (mode !== 'build') return;
     h.textContent = placing ? 'Click the side of a pipe to place the part · Esc to cancel · drag to turn the view'
-      : buildStep === 'frame' ? 'Click a blue joint, then an orange arrow to add a pipe · drag to turn the view · scroll to zoom'
+      : buildStep === 'frame' ? 'Click a blue joint · drag an orange arrow out to add a pipe · drag empty space to turn the view · scroll to zoom'
       : 'Drag a part to move it · click a part to edit it · drag empty space to turn the view · scroll to zoom';
   }
 
@@ -1026,6 +1173,11 @@
       case 'redo': return redo();
       case 'del': return deleteSelected();
       case 'mirrorPart': return mirrorPart();
+      case 'fitTurn': { const cur = Design.fittings(design).find(f => sel && Design.eq(f.p, sel.p)); return cur && chooseFit(cur.type, true); }
+      case 'fitAuto': return chooseFit(null);
+      case 'splitHere': return splitHere();
+      case 'pipeShorter': return pipeLenStep(-1);
+      case 'pipeLonger': return pipeLenStep(1);
       case 'budgetCsv': return budgetCsv();
       case 'tank': setMode('pilot'); return loadMission('tank');
       case 'goPilot': return $('#modePilot').click();
