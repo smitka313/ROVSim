@@ -81,6 +81,26 @@
     }
   }
 
+  // A held ring keeps where the claw gripped it: offset from the claw tip and turn, both in the ROV's frame
+  function heldRingPose(M, t) {
+    const h = t.held, qn = M.rov.qn;
+    const q = h.q ? qn.clone().multiply(h.q) : qn.clone();
+    const pos = t.world.tip.clone().add(h.off ? h.off.clone().applyQuaternion(qn) : V3(0, 0, 0));
+    return { pos, q, n: V3(0, 0, 1).applyQuaternion(q) };
+  }
+  // How close the claw's grip (the space between the jaws) comes to a ring's rim
+  function gripToRim(W, r) {
+    const n = r.st === 'floor' || r.st === 'falling' ? ringNormal(r) : null;
+    let best = Infinity;
+    for (let k = 0; k <= 8; k++) {
+      const q = W.mount.clone().addScaledVector(W.dir, CLAW_GRIP[0] + (CLAW_GRIP[1] - CLAW_GRIP[0]) * k / 8);
+      const d = q.sub(r.pos), along = d.dot(n), radial = d.addScaledVector(n, -along).length();
+      best = Math.min(best, Math.hypot(along, radial - World.RING_R));
+    }
+    return best;
+  }
+  const CLAW_GRIP = [0.07, 0.175]; // jaws run from 7 to 17.5 cm out along the claw
+
   const RING_UP = World.RING_R + World.RING_T; // height of a standing ring's center above the floor
   const ringNormal = r => V3(Math.sin(r.yaw), 0, Math.cos(r.yaw));
 
@@ -112,7 +132,7 @@
         } else t.slide = 0;
       }
       if (t.type === 'claw' && t.held && t.held.kind === 'ring') {
-        const r = t.held.ref; r.pos.copy(W.tip);
+        const P = heldRingPose(M, t); t.held.ref.pos.copy(P.pos); t.held.ref.heldQ = P.q;
       }
     }
     ringCaps(M);
@@ -161,7 +181,7 @@
         r.pos.copy(m.position);
         r.yaw = Math.atan2(W.dir.x, W.dir.z);
         m.visible = true;
-      } else if (r.st === 'claw') { m.position.copy(r.pos); m.quaternion.copy(M.rov.qn); r.yaw = new THREE.Euler().setFromQuaternion(M.rov.qn, 'YXZ').y; m.visible = true; }
+      } else if (r.st === 'claw') { const q = r.heldQ || M.rov.qn; m.position.copy(r.pos); m.quaternion.copy(q); r.yaw = new THREE.Euler().setFromQuaternion(q, 'YXZ').y; m.visible = true; }
       else if (r.st === 'hook') {
         const h = s.hooks[r.hook], k = h.rings.indexOf(r);
         m.position.copy(h.world).add(V3((k - (h.rings.length - 1) / 2) * 0.012, -(World.RING_R - World.RING_T - 0.012), 0));
@@ -190,7 +210,10 @@
         const c = t.mount.clone().addScaledVector(t.dir, t.P.tipLen * (0.82 - k * 0.11)).addScaledVector(upL, -up);
         circle(c, n.clone().cross(v), v);
       });
-      if (t.type === 'claw' && t.held && t.held.kind === 'ring') circle(t.tip.clone(), V3(1, 0, 0), V3(0, 1, 0));
+      if (t.type === 'claw' && t.held && t.held.kind === 'ring') {
+        const q = t.held.q || new THREE.Quaternion(), c = t.tip.clone().add(t.held.off || V3(0, 0, 0));
+        circle(c, V3(1, 0, 0).applyQuaternion(q), V3(0, 1, 0).applyQuaternion(q));
+      }
     }
   }
 
@@ -210,7 +233,7 @@
         c = t.world.mount.clone().addScaledVector(t.world.dir, t.P.tipLen * 0.82).add(V3(0, -up, 0));
         n = t.world.dir.clone();
       } else if (t.type === 'claw' && t.held && t.held.kind === 'ring') {
-        ring = t.held.ref; c = ring.pos.clone(); n = t.world.dir.clone();
+        ring = t.held.ref; const P = heldRingPose(M, t); c = P.pos; n = P.n;
       }
       if (!ring) continue;
       n.y = 0; if (n.lengthSq() < 1e-6) n.set(0, 0, 1); n.normalize();
@@ -403,9 +426,9 @@
           const h = t.held; t.held = null;
           if (h.kind === 'ring') {
             const r = h.ref;
-            const hi = s.hooks ? s.hooks.findIndex(k => k.world.distanceTo(t.world.tip) < 0.1) : -1;
+            const hi = s.hooks ? s.hooks.findIndex(k => k.world.distanceTo(t.world.tip) < 0.1 || k.world.distanceTo(r.pos) < World.RING_R + 0.02) : -1;
             if (hi >= 0) { r.st = 'hook'; r.hook = hi; s.hooks[hi].rings.push(r); M.event('Ring on the hook! +15', 'good'); M.sound && M.sound('ring'); }
-            else { r.st = 'falling'; r.vy = 0; M.event('Ring dropped.'); }
+            else { r.st = 'falling'; r.vy = 0; r.heldQ = null; M.event('Ring dropped.'); }
           } else if (h.kind === 'sac') {
             const c = h.ref;
             if (c.st === 'held') { c.st = 'free'; c.vel.set(0, 0, 0); }
@@ -417,8 +440,15 @@
       t.closed = true;
       const tip = t.world.tip;
       if (s.rings) {
-        const r = s.rings.filter(r => r.st === 'floor' || r.st === 'falling').sort((a, b) => a.pos.distanceTo(tip) - b.pos.distanceTo(tip))[0];
-        if (r && r.pos.distanceTo(tip) < 0.08) { r.st = 'claw'; t.held = { kind: 'ring', ref: r }; M.event('Ring in the claw.'); return; }
+        // grab a ring whose rim (or the tab) sits between the jaws, or the ring itself if the tip is in its middle
+        const W = t.world, free = s.rings.filter(r => r.st === 'floor' || r.st === 'falling');
+        const r = free.map(r => ({ r, g: Math.min(gripToRim(W, r), r.pos.distanceTo(tip) < 0.05 ? 0 : Infinity) })).sort((a, b) => a.g - b.g)[0];
+        if (r && r.g < 0.032) {
+          const ring = r.r, qi = M.rov.qn.clone().invert();
+          ring.st = 'claw';
+          t.held = { kind: 'ring', ref: ring, off: ring.pos.clone().sub(tip).applyQuaternion(qi), q: qi.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ring.yaw, 0))) };
+          M.event('Ring in the claw.'); return;
+        }
       }
       if (s.sacs) {
         for (const c of s.sacs) {
