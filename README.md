@@ -15,6 +15,7 @@ A browser-based simulator for the Square One **Underwater Innovative Vehicle Des
   - #1 Hula Hoop Hustle, #2 Raising the "All Clear" Flag, #3 "Carp" Diem, #4 Drag Race
   - Pilot sees only the ROV camera during heats; peeking and diver assists cost −20
   - Fuse, tether voltage drop, keyboard / gamepad / touch controls, data logging
+- **Sound:** underwater ambience, motor whine that rises and falls with throttle and battery voltage, prop wash, bubbles, bumps and splashes, all generated in the browser (no sound files). Toggle with the Sound button in the pilot view
 - **Pilot training:** six short drills (gates, depth hold, camera-only search, pick up, hang, spool) with 1–3 stars, unlocking in order
 - **Heat replay:** every heat records the ROV's path and events; replay it on the pool map with a timeline, depth graph and stats
 - **Design log:** each test saves a snapshot of the design and its result, with automatic change summaries, side-by-side comparison, student notes and a printable journal page
@@ -42,6 +43,7 @@ It also works on GitHub Pages (Settings → Pages → deploy from the `main` bra
 - `js/world.js`: 3D models of the ROV, pool and apparatus
 - `js/missions.js`: the challenges, pilot drills and their scoring
 - `js/extras.js`: design log, shop sheet and heat replay
+- `js/audio.js`: pilot sounds made with Web Audio
 - `js/app.js`: interface, builder, piloting, heats, turn-in and teacher view
 - `vendor/three.min.js`: three.js r128 (MIT license)
 - `assets/squareone-logo.png`: Square One Education Network logo, used for team resources as allowed by parameter 10.6

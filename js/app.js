@@ -22,7 +22,8 @@
   let sel = null; // {kind:'joint'|'pipe'|'part', p, i, id}
   let mirror = store.get('mirror', true);
   let pipeLen = store.get('pipeLen', 6);
-  const opts = Object.assign({ sound: false, murky: false, touch: matchMedia('(pointer: coarse)').matches, balance: true, map: true, junior: false }, store.get('opts', {}));
+  const opts = Object.assign({ sound: true, murky: false, touch: matchMedia('(pointer: coarse)').matches, balance: true, map: true, junior: false }, store.get('opts', {}));
+  if (!opts.soundV2) { opts.sound = true; opts.soundV2 = true; store.set('opts', opts); } // pilot sounds start on once for everyone
   let progress = store.get('progress', {});
   let undoStack = [], redoStack = [];
 
@@ -1256,14 +1257,14 @@
   function beep(kind) {
     if (!opts.sound) return;
     try {
-      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      actx = U.Audio.init(); if (!actx) return;
       const notes = { ring: [880, 0.08], flag: [660, 0.12, 990, 0.18], go: [1046, 0.3], beep: [523, 0.15], bad: [196, 0.35] }[kind] || [700, 0.1];
       let t = actx.currentTime;
       for (let i = 0; i < notes.length; i += 2) {
         const o = actx.createOscillator(), g = actx.createGain();
         o.frequency.value = notes[i]; o.type = kind === 'bad' ? 'sawtooth' : 'sine';
         g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + notes[i + 1]);
-        o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + notes[i + 1]);
+        o.connect(g); g.connect(U.Audio.master()); o.start(t); o.stop(t + notes[i + 1]);
         t += notes[i + 1];
       }
     } catch (e) { /* audio unavailable */ }
@@ -1308,6 +1309,7 @@
     const n = M ? M.rov.cameras.length : 0;
     const b = (v, label, extra) => `<button class="vbtn ${extra || ''}" data-v="${v}" aria-pressed="${(v === 'cam' && view === 'cam' && camIdx === 0) || (v === 'cam2' && view === 'cam' && camIdx === 1) || (v === view && v !== 'cam')}" ${viewAllowed(v) ? '' : 'disabled style="opacity:.4"'}>${label}</button>`;
     vb.innerHTML = (n ? b('cam', 'ROV camera') : '') + (n > 1 ? b('cam2', 'Camera 2') : '') + b('deck', 'Deck view', inHeat ? 'cost' : '') + (inHeat ? '' : b('chase', 'Chase')) +
+      `<button class="vbtn" data-v="sound" aria-pressed="${!!opts.sound}" title="Motor, water and bump sounds">${opts.sound ? 'Sound on' : 'Sound off'}</button>` +
       `<button class="vbtn" data-v="keys" aria-pressed="${!$('#keyguide').hidden}" title="Show the driving controls">? Keys</button>` +
       (M.def.views === 'cam' ? '' : `<button class="vbtn" data-v="map" aria-pressed="${opts.map}" title="Spotter map: what your teammates on the deck can see">Map</button>`);
   }
@@ -1321,6 +1323,7 @@
       else { fitBuilder(); if (b.dataset.bv === 'front') { orbit.th = 0; orbit.ph = Math.PI / 2 - 0.05; } if (b.dataset.bv === 'side') { orbit.th = Math.PI / 2; orbit.ph = Math.PI / 2 - 0.05; } if (b.dataset.bv === 'top') { orbit.th = 0; orbit.ph = 0.09; } }
       return;
     }
+    if (b.dataset.v === 'sound') { opts.sound = !opts.sound; store.set('opts', opts); if (opts.sound) U.Audio.init(); U.Audio.setEnabled(opts.sound); return renderViewButtons(); }
     if (b.dataset.v === 'keys') { showKeyGuide($('#keyguide').hidden, false); return; }
     if (b.dataset.v === 'map') { opts.map = !opts.map; store.set('opts', opts); renderViewButtons(); return; }
     setView(b.dataset.v);
@@ -1412,6 +1415,7 @@
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, lastW, lastH);
       renderer.render(bScene, bCam);
+      U.Audio.update({ active: false }, dt);
       renderCamPreview();
     } else if (M) {
       acc += dt;
@@ -1455,11 +1459,32 @@
         if (samples.length > 3000) samples.shift();
       }
       updatePoolVisuals(dt);
+      pilotSounds(dt);
       renderer.render(pScene, pCam);
       uiT += dt;
       if (uiT > 0.2) { uiT = 0; updatePilotLive(); }
     }
     requestAnimationFrame(frame);
+  }
+
+  // Motor, water, bump and splash sounds while piloting
+  let prevContact = {}, thudCool = 0;
+  function pilotSounds(dt) {
+    const r = M.rov, c = r.contact;
+    U.Audio.update({
+      active: $('#modal').hidden, underwater: pCam.position.y < 0,
+      motors: r.thrusters.map(t => ({ out: t.out, wet: Physics.worldOf(r, t.pos).y < -0.02 })),
+      volts: r.elec.volts, speed: r.v.length()
+    }, dt);
+    thudCool -= dt;
+    const sp = r.v.length();
+    if (thudCool <= 0) {
+      if (c.floor && !prevContact.floor && r.v.y < -0.03) { U.Audio.thud(Math.abs(r.v.y) * 2.5); thudCool = 0.25; }
+      else if ((c.obst && !prevContact.obst) || (c.wall && !prevContact.wall)) { if (sp > 0.05) { U.Audio.thud(sp * 1.6); thudCool = 0.25; } }
+    }
+    if (c.surface && !prevContact.surface && r.v.y > 0.03) U.Audio.splash(r.v.y * 3 + 0.2);
+    if (!c.surface && prevContact.surface && r.v.y < -0.03) U.Audio.splash(Math.abs(r.v.y) * 2);
+    prevContact = { floor: c.floor, obst: c.obst, wall: c.wall, surface: c.surface };
   }
 
   // In the camera step, show what the pilot will see in a corner of the 3D view
@@ -2088,7 +2113,7 @@
   document.addEventListener('click', e => { if (!e.target.closest('.popwrap')) { $('#menuPop').hidden = true; $('#btnMenu').setAttribute('aria-expanded', 'false'); } });
   $('#menuPop').addEventListener('change', e => {
     const t = e.target;
-    if (t.dataset.o) { opts[t.dataset.o] = t.checked; store.set('opts', opts); if (t.dataset.o === 'balance') rebuildBuilder(); if (t.dataset.o === 'touch') $('#touch').hidden = !(mode === 'pilot' && opts.touch); }
+    if (t.dataset.o) { opts[t.dataset.o] = t.checked; store.set('opts', opts); if (t.dataset.o === 'sound') { if (opts.sound) U.Audio.init(); U.Audio.setEnabled(opts.sound); } if (t.dataset.o === 'balance') rebuildBuilder(); if (t.dataset.o === 'touch') $('#touch').hidden = !(mode === 'pilot' && opts.touch); }
     if (t.id === 'optJunior') { $('#menuPop').hidden = true; setJunior(t.checked); return; }
     if (t.id === 'optDark') { document.documentElement.dataset.theme = t.checked ? 'dark' : 'light'; store.set('theme', document.documentElement.dataset.theme); buildGrid(); }
   });
@@ -2306,6 +2331,10 @@
   })();
   const isBranded = () => document.documentElement.classList.contains('branded');
   const DISCLAIMER = 'Built for Square One Underwater IVD teams. Not an official Square One product.';
+
+  const unlockAudio = () => { if (opts.sound) { U.Audio.init(); U.Audio.setEnabled(true); } };
+  document.addEventListener('pointerdown', unlockAudio);
+  document.addEventListener('keydown', unlockAudio);
 
   makeThumbs();
   buildGrid(); fitBuilder(); rebuildBuilder(); renderSide(); renderViewButtons();

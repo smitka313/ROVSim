@@ -110,7 +110,7 @@
     const vf = Math.min(1.15, (vMotor / 12) ** 2);
 
     // Buoyancy and weight, element by element (this gives the righting moment and surface floating)
-    r.contact.floor = 0; r.contact.surface = 0;
+    r.contact.floor = 0; r.contact.surface = 0; r.contact.obst = 0; r.contact.wall = 0;
     let wetFrac = 0, totalV = 0;
     // only test apparatus that is near the ROV
     const near = [];
@@ -140,6 +140,7 @@
       const W = env.walls;
       const wallPush = (penW, nx, nz) => {
         if (penW <= 0) return;
+        r.contact.wall = 1;
         const vp = pointVel(r, wp);
         const vn = vp.x * nx + vp.z * nz;
         const n = Math.max(0, 400 * penW - 25 * Math.min(0, vn));
@@ -156,7 +157,7 @@
           const vp = pointVel(r, wp);
           const vn = vp.dot(nrm);
           addForce(nrm.multiplyScalar(Math.max(0, 300 * pen2 - 20 * Math.min(0, vn))), wp);
-          o.hit = (o.hit || 0) + dt;
+          o.hit = (o.hit || 0) + dt; r.contact.obst = 1;
         }
       }
     }
