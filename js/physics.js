@@ -26,6 +26,10 @@
       }
     });
 
+    // Collision capsules for the frame pipes and tool shafts, so thin apparatus can't slip between the mass lumps
+    const caps = design.pipes.map(p => ({ a: V3(...p.a).multiplyScalar(IN).sub(cm), b: V3(...p.b).multiplyScalar(IN).sub(cm), r: 0.0107 }));
+    tools.forEach(t => caps.push({ a: t.mount.clone(), b: t.tip.clone(), r: 0.008 }));
+
     // Thruster allocation: how much each motor helps surge, sway, heave and yaw.
     const cols = ['surge', 'sway', 'heave', 'yaw'];
     thrusters.forEach(t => {
@@ -59,11 +63,11 @@
 
     return {
       radius: Math.max(...els.map(e => e.rel.length() + e.r)) + 0.05,
-      design, mp, M, Meff: M * 1.15 + RHO * mp.V * 1e-6 * 0.3, els, size, thrusters, cameras, tools, I, area, rotK, q,
+      caps, extraCaps: [], design, mp, M, Meff: M * 1.15 + RHO * mp.V * 1e-6 * 0.3, els, size, thrusters, cameras, tools, I, area, rotK, q,
       elec: { vBat: opt('battery').volts, r: rTether + opt('battery').rOhm, fuseA: opt('fuse').amps, pwm: E.control === 'pwm', amps: 0, volts: opt('battery').volts, heat: 0, blown: false, ah: 0 },
       tether: { len: opt('tether').ft * 0.3048, floats: E.tetherFloat === 'yes', pairs },
       p: V3(0, -0.5, -1), v: V3(0, 0, 0), qn: new THREE.Quaternion(), w: V3(0, 0, 0),
-      cmd: { surge: 0, sway: 0, heave: 0, yaw: 0 }, contact: { floor: 0, surface: 0 }, t: 0
+      cmd: { surge: 0, sway: 0, heave: 0, yaw: 0 }, contact: { floor: 0, surface: 0, obst: 0, wall: 0 }, t: 0
     };
   }
 
@@ -71,6 +75,7 @@
     r.p.copy(pos); r.v.set(0, 0, 0); r.w.set(0, 0, 0);
     r.qn.setFromAxisAngle(V3(0, 1, 0), -(headingDeg || 0) * Math.PI / 180);
     r.tools.forEach(t => { t.carried = []; t.held = null; t.closed = false; });
+    r.extraCaps = [];
     r.elec.heat = 0; r.elec.blown = false;
   }
 
@@ -116,7 +121,7 @@
     const near = [];
     for (const o of env.obstacles) {
       if (!o.c) { o.c = o.a.clone().add(o.b).multiplyScalar(0.5); o.h = o.a.distanceTo(o.b) / 2 + o.r; }
-      if (o.c.distanceTo(r.p) < o.h + r.radius) near.push(o);
+      if (o.c.distanceTo(r.p) < o.h + r.radius + (r.extraCaps.length ? 0.15 : 0)) near.push(o);
     }
     for (const e of r.els) {
       const wp = worldOf(r, e.rel, tmp);
@@ -148,7 +153,8 @@
       };
       wallPush(W.x0 - (wp.x - e.r), 1, 0); wallPush((wp.x + e.r) - W.x1, -1, 0);
       wallPush(W.z0 - (wp.z - e.r), 0, 1); wallPush((wp.z + e.r) - W.z1, 0, -1);
-      // apparatus (capsules)
+      // apparatus (capsules); pipes and tool tips are handled as capsules below
+      if (e.src === 'pipe' || e.src === 'tip') continue;
       for (const o of near) {
         const c = closestOnSeg(wp, o.a, o.b);
         const d = wp.distanceTo(c), pen2 = o.r + e.r - d;
@@ -162,6 +168,33 @@
       }
     }
     const wet = totalV ? wetFrac / totalV : 1;
+
+    // Pipes, tool shafts and carried rings against the apparatus: capsule against capsule, with a little bounce
+    if (near.length) {
+      const ca = V3(0, 0, 0), cb = V3(0, 0, 0);
+      const hitCap = cp => {
+        worldOf(r, cp.a, ca); worldOf(r, cp.b, cb);
+        for (const o of near) {
+          const [pr, po] = closestSegSeg(ca, cb, o.a, o.b);
+          const d = pr.distanceTo(po), pen = o.r + cp.r - d;
+          if (pen <= 0) continue;
+          let nrm = pr.clone().sub(po);
+          if (d < 1e-4) {
+            // dead-centre crossing: push away from the apparatus axis toward the ROV's middle
+            const ax = o.b.clone().sub(o.a).normalize();
+            nrm = r.p.clone().sub(closestOnSeg(r.p, o.a, o.b)); nrm.addScaledVector(ax, -nrm.dot(ax));
+            if (nrm.lengthSq() < 1e-10) nrm.set(0, 1, 0);
+          }
+          nrm.normalize();
+          const vp = pointVel(r, pr), vn = vp.dot(nrm);
+          const n = Math.min(2500 * pen - 20 * Math.min(0, vn), 100);
+          const tang = vp.clone().addScaledVector(nrm, -vn).multiplyScalar(-3); // a little rub along the pipe
+          addForce(nrm.multiplyScalar(n).add(tang), pr);
+          o.hit = (o.hit || 0) + dt; r.contact.obst = 1;
+        }
+      };
+      r.caps.forEach(hitCap); r.extraCaps.forEach(hitCap);
+    }
 
     // Thrusters (only push when their prop is underwater)
     for (const t of r.thrusters) {
@@ -221,6 +254,27 @@
     return new THREE.Vector3().crossVectors(ww, rel).add(r.v);
   }
 
+  // Closest points between segments p1-q1 and p2-q2
+  function closestSegSeg(p1, q1, p2, q2) {
+    const d1 = q1.clone().sub(p1), d2 = q2.clone().sub(p2), rr = p1.clone().sub(p2);
+    const a = d1.lengthSq(), e = d2.lengthSq(), f = d2.dot(rr);
+    let s = 0, t = 0;
+    if (a < 1e-12 && e < 1e-12) return [p1.clone(), p2.clone()];
+    if (a < 1e-12) t = Math.max(0, Math.min(1, f / e));
+    else {
+      const c = d1.dot(rr);
+      if (e < 1e-12) s = Math.max(0, Math.min(1, -c / a));
+      else {
+        const b = d1.dot(d2), den = a * e - b * b;
+        s = den > 1e-12 ? Math.max(0, Math.min(1, (b * f - c * e) / den)) : 0;
+        t = (b * s + f) / e;
+        if (t < 0) { t = 0; s = Math.max(0, Math.min(1, -c / a)); }
+        else if (t > 1) { t = 1; s = Math.max(0, Math.min(1, (b - c) / a)); }
+      }
+    }
+    return [p1.clone().addScaledVector(d1, s), p2.clone().addScaledVector(d2, t)];
+  }
+
   function closestOnSeg(p, a, b) {
     const ab = tmp.copy(b).sub(a);
     const L2 = ab.lengthSq();
@@ -239,5 +293,5 @@
     };
   }
 
-  U.Physics = { create, place, step, worldOf, telemetry, closestOnSeg, RHO, G };
+  U.Physics = { create, place, step, worldOf, telemetry, closestOnSeg, closestSegSeg, RHO, G };
 })();

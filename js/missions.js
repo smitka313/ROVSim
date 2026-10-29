@@ -53,7 +53,13 @@
     capsulesFromMesh(ob, V3(W / 2, 0.03, -D / 2 - 0.35).add(o), V3(W / 2, 0.03, D / 2).add(o), 0.036);
     tip.userData.hooks.forEach(h => {
       h.world = h.bowl.clone().add(o); h.tipWorld = h.tip.clone().add(o);
-      capsulesFromMesh(ob, V3(h.side * W / 2, 0.02, D / 2).add(o), V3(h.side * W / 2, 0.02 - h.drop * IN, D / 2).add(o), 0.012);
+      const x = h.side * W / 2, yb = 0.02 - h.drop * IN, R = 1.69 * IN;
+      capsulesFromMesh(ob, V3(x, 0.02, D / 2).add(o), V3(x, yb, D / 2).add(o), 0.012);
+      // the J: half-circle bowl, then the short upturned tip
+      const arc = [];
+      for (let k = 0; k <= 6; k++) { const a = Math.PI * k / 6; arc.push(V3(x, yb - R * Math.sin(a), D / 2 + R * (1 - Math.cos(a))).add(o)); }
+      for (let k = 0; k < 6; k++) capsulesFromMesh(ob, arc[k], arc[k + 1], 0.0115);
+      capsulesFromMesh(ob, V3(x, yb, D / 2 + 2 * R).add(o), V3(x, yb + 0.022, D / 2 + 2 * R).add(o), 0.0115);
     });
     s.hooks = tip.userData.hooks;
     s.spoolTop = V3(0, 0.0, 0).add(o); s.spoolBot = V3(0, tip.userData.spoolY - 0.015, 0).add(o);
@@ -109,6 +115,7 @@
         const r = t.held.ref; r.pos.copy(W.tip);
       }
     }
+    ringCaps(M);
     // spool turning: tangential motion of anything touching the shaft turns the spool
     if (!s.flagUp && s.spoolTop) {
       const axisX = s.spoolTop.x, axisZ = s.spoolTop.z;
@@ -160,6 +167,30 @@
         m.position.copy(h.world).add(V3((k - (h.rings.length - 1) / 2) * 0.012, -(World.RING_R - World.RING_T - 0.012), 0));
         m.rotation.set(0, 0, 0); m.visible = true;
       } else if (r.st === 'shore') m.visible = false;
+    }
+  }
+
+  // A carried ring is solid: it bumps into the hooks and frame like the ROV does (ROV-local capsules, 10 per ring)
+  function ringCaps(M) {
+    const rov = M.rov, caps = rov.extraCaps; caps.length = 0;
+    const R = World.RING_R, T = World.RING_T, up = R - T - 0.012;
+    const upL = V3(0, 1, 0).applyQuaternion(rov.qn.clone().invert());
+    const circle = (c, u, v) => {
+      let prev = null;
+      for (let k = 0; k <= 10; k++) {
+        const a = 2 * Math.PI * k / 10, pt = c.clone().addScaledVector(u, R * Math.cos(a)).addScaledVector(v, R * Math.sin(a));
+        if (prev) caps.push({ a: prev, b: pt, r: T });
+        prev = pt;
+      }
+    };
+    for (const t of rov.tools) {
+      if (t.type === 'prong') t.carried.forEach((r, k) => {
+        const n = t.dir.clone().normalize(), v = upL.clone().addScaledVector(n, -upL.dot(n));
+        if (v.lengthSq() < 1e-6) return; v.normalize();
+        const c = t.mount.clone().addScaledVector(t.dir, t.P.tipLen * (0.82 - k * 0.11)).addScaledVector(upL, -up);
+        circle(c, n.clone().cross(v), v);
+      });
+      if (t.type === 'claw' && t.held && t.held.kind === 'ring') circle(t.tip.clone(), V3(1, 0, 0), V3(0, 1, 0));
     }
   }
 
@@ -653,7 +684,8 @@
     }),
     drill5: drill({
       id: 'drill5', drill: 5, title: 'Drill 5: Hang it on the hook', short: 'Hang', stars: [40, 80], needs: 'grab',
-      desc: 'Your ROV starts with a ring. Drive up to a J hook hanging under the tip-up, put the tool tip right on the hook, and press H (prong) or G to open the claw.',
+      desc: 'Your ROV starts with a ring. Drive up to a J hook hanging under the tip-up so the hook goes inside the ring. The hooks are solid: ease in until your ROV touches, then press H (prong) or G to open the claw.',
+      actions: [{ key: 'h', label: 'Hang ring (H)', run: M => { hangRing(M); }, show: M => M.rov.tools.some(t => t.type === 'prong') }],
       setup(M) { setupFlag(M, V3(0, 0, -3.2), { x0: 2, x1: 3, z0: -8, z1: -7 }, 1); },
       afterPlace(M) {
         const t = grabTool(M), r = M.state.rings[0]; if (!t || !r) return;
