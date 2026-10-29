@@ -8,7 +8,7 @@
   //   plastic volume 4.1 cm³ (≈ 6.0 g), air inside 4.98 cm³ when sealed.
   const PIPE = { gPerIn: 6.0, matCm3PerIn: 4.1, airCm3PerIn: 4.98, stickIn: 120, stickPrice: 4.48, od: 0.84 * IN };
 
-  // Fittings are chosen automatically from how pipes meet at a joint.
+  // Fittings: picked automatically from how pipes meet at a joint, or chosen by the student.
   const FITTINGS = {
     cap:      { name: '½" end cap', short: 'End cap',                   price: 0.58, g: 8,  cm3: 6 },
     coupling: { name: '½" coupling', short: 'Coupling',                  price: 0.48, g: 12, cm3: 9 },
