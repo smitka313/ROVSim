@@ -1504,7 +1504,7 @@
     return true;
   }
   function setView(v) {
-    if (!viewAllowed(v)) { toast(M.def.views === 'cam' ? 'This drill is camera only, like a real heat.' : v === 'chase' ? 'During a heat the pilot sees only the ROV camera.' : 'This ROV has no camera there.'); return; }
+    if (!viewAllowed(v)) { toast(M.def.views === 'cam' ? 'This drill is camera only, like a real heat.' : v === 'chase' ? 'During a heat the pilot sees only the ROV camera.' : M.rov.cameras.length ? 'This ROV has no camera there.' : 'This ROV has no camera, so there’s no camera view. Add one in Build, step 3 (Camera).'); return; }
     if (v === 'deck' && view !== 'deck' && M.def.views === 'heat' && heat && heat.running) { heat.peeks++; pushEvent('Pilot looked at the pool: −20', 'bad'); beep('bad'); }
     if (v === 'cam2') { view = 'cam'; camIdx = 1; } else { if (v === 'cam') camIdx = 0; view = v; }
     camYaw = 0; camPitch = 0;
@@ -1533,7 +1533,7 @@
     const inHeat = heat && heat.running && M.def.views === 'heat';
     const n = M ? M.rov.cameras.length : 0;
     const b = (v, label, extra) => `<button class="vbtn ${extra || ''}" data-v="${v}" aria-pressed="${(v === 'cam' && view === 'cam' && camIdx === 0) || (v === 'cam2' && view === 'cam' && camIdx === 1) || (v === view && v !== 'cam')}" ${viewAllowed(v) ? '' : 'disabled style="opacity:.4"'}>${label}</button>`;
-    vb.innerHTML = (n ? b('cam', 'ROV camera') : '') + (n > 1 ? b('cam2', 'Camera 2') : '') + b('deck', 'Deck view', inHeat ? 'cost' : '') + (inHeat ? '' : b('chase', 'Chase')) +
+    vb.innerHTML = (n ? b('cam', 'ROV camera') : '<button class="vbtn" data-v="cam" style="opacity:.45" title="This ROV has no camera. Add one in Build, step 3.">ROV camera</button>') + (n > 1 ? b('cam2', 'Camera 2') : '') + b('deck', 'Deck view', inHeat ? 'cost' : '') + (inHeat ? '' : b('chase', 'Chase')) +
       `<button class="vbtn" data-v="sound" aria-pressed="${!!opts.sound}" title="Motor, water and bump sounds">${opts.sound ? 'Sound on' : 'Sound off'}</button>` +
       `<button class="vbtn" data-v="keys" aria-pressed="${!$('#keyguide').hidden}" title="Show the driving controls">? Keys</button>` +
       (M.def.views === 'cam' ? '' : `<button class="vbtn" data-v="map" aria-pressed="${opts.map}" title="Spotter map: what your teammates on the deck can see">Map</button>`);
