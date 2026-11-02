@@ -22,7 +22,7 @@
   let sel = null; // {kind:'joint'|'pipe'|'part', p, i, id}
   let mirror = store.get('mirror', true);
   let pipeLen = store.get('pipeLen', 6);
-  const opts = Object.assign({ sound: true, murky: false, touch: matchMedia('(pointer: coarse)').matches, balance: true, map: true, junior: false }, store.get('opts', {}));
+  const opts = Object.assign({ sound: true, tether: 'auto', murky: false, touch: matchMedia('(pointer: coarse)').matches, balance: true, map: true, junior: false }, store.get('opts', {}));
   if (!opts.soundV2) { opts.sound = true; opts.soundV2 = true; store.set('opts', opts); } // pilot sounds start on once for everyone
   let progress = store.get('progress', {});
   let undoStack = [], redoStack = [];
@@ -1120,6 +1120,7 @@
     const ly = t.closest('[data-layout]'); if (ly) return applyMotorLayout(ly.dataset.layout, motorType);
     const mt = t.closest('[data-mtype]'); if (mt) { motorType = mt.dataset.mtype; store.set('motorType', motorType); return renderBuild(); }
     const ft = t.closest('[data-fit]'); if (ft) return chooseFit(ft.dataset.fit);
+    const tm = t.closest('[data-tmode]'); if (tm) { opts.tether = tm.dataset.tmode; store.set('opts', opts); if (M) M.rov.tether.mode = opts.tether; return renderPilot(); }
     const ln = t.closest('[data-len]'); if (ln) { pipeLen = +ln.dataset.len; store.set('pipeLen', pipeLen); return renderBuild(); }
     const dr = t.closest('[data-dir]'); if (dr) return setPartDir(dr.dataset.dir);
     const qy = t.closest('[data-qty]'); if (qy) { const p = selPart(); if (p) { commit(); p.qty = Math.max(1, Math.min(12, (p.qty || 1) + +qy.dataset.qty)); changed(); } return; }
@@ -1330,6 +1331,8 @@
       };
     }
     def.setup(M);
+    rov.tether.mode = opts.tether || 'auto';
+    M.ropeMesh = tetherMesh(rov); scene.add(M.ropeMesh); M.lastSnag = null;
     rov.onFuse = () => { pushEvent('Fuse blown! Too much current. Replace the fuse to continue.', 'bad'); beep('bad'); };
     Physics.place(rov, V3(def.start.x, def.start.y, def.start.z), def.start.heading);
     if (id === 'drag') { const rear = Missions.rearZ(M); rov.p.z += -0.012 - rear; }
@@ -1431,6 +1434,7 @@
       r.p.addScaledVector(away.normalize(), 0.1);
     }
     r.p.y = Math.min(r.p.y + 0.2, -0.3);
+    if (Physics.freeRope(r)) pushEvent('The diver lifted the tether off the apparatus.');
     renderPilot();
   }
   function replaceFuse() {
@@ -1578,6 +1582,9 @@
   window.addEventListener('keyup', e => { keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key); });
   window.addEventListener('blur', () => keys.clear());
   const touchHeld = new Set();
+  let tethHold = 0; // hold-to-pull buttons in the tether card
+  $('#sideBody').addEventListener('pointerdown', e => { const b = e.target.closest('[data-teth]'); if (b) { e.preventDefault(); tethHold = +b.dataset.teth; } });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => $('#sideBody').addEventListener(ev, () => { tethHold = 0; }));
   $('#touch').addEventListener('pointerdown', e => {
     const b = e.target.closest('button[data-k]'); if (!b) return;
     e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (err) { /* capture is optional */ }
@@ -1597,6 +1604,7 @@
     c.surge = (k('w') || k('ArrowUp') || touchHeld.has('fwd') ? 1 : 0) - (k('s') || k('ArrowDown') || touchHeld.has('back') ? 1 : 0);
     c.yaw = (k('d') || k('ArrowRight') || touchHeld.has('yawR') ? 1 : 0) - (k('a') || k('ArrowLeft') || touchHeld.has('yawL') ? 1 : 0);
     c.sway = (k('e') || touchHeld.has('swayR') ? 1 : 0) - (k('q') || touchHeld.has('swayL') ? 1 : 0);
+    if (M && M.rov.rope) M.rov.rope.cmd = M.rov.tether.mode === 'manual' ? (k('x') || tethHold > 0 ? 1 : 0) - (k('z') || tethHold < 0 ? 1 : 0) : 0;
     // explain once per mission why sliding does nothing without a sideways motor
     if (c.sway && M && !M.swayHint && !M.rov.thrusters.some(t => t.alloc.sway)) {
       M.swayHint = true;
@@ -1741,8 +1749,48 @@
     }
   }
 
+  // The tether in 3D: one thin cylinder per link, plus foam floats if it has them
+  const ropeDummy = new THREE.Object3D();
+  function tetherMesh(rov) {
+    const g = new THREE.Group(), N = Physics.ROPE_N;
+    const links = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 6), World.mat('tether', 0xf2a900, { roughness: 0.6 }), N);
+    links.frustumCulled = false; g.add(links); g.userData.links = links;
+    g.userData.rad = 0.0035 + 0.0006 * Math.min(8, rov.tether.pairs);
+    if (rov.tether.floats) {
+      const fl = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.016, 0.016, 0.05, 10), World.mat('tfloat', 0xff6a1f, { roughness: 0.8 }), Math.floor(N / 2));
+      fl.frustumCulled = false; g.add(fl); g.userData.floats = fl;
+    }
+    return g;
+  }
+  function updateTether() {
+    const R = M.rov.rope, g = M.ropeMesh; if (!R || !g) return;
+    const N = Physics.ROPE_N, rad = g.userData.rad, links = g.userData.links;
+    for (let i = 0; i < N; i++) {
+      const a = R.x[i], b = R.x[i + 1], d = b.clone().sub(a), L = d.length() || 1e-4;
+      ropeDummy.position.copy(a).add(b).multiplyScalar(0.5);
+      ropeDummy.quaternion.setFromUnitVectors(V3(0, 1, 0), d.divideScalar(L));
+      const nearCam = ropeDummy.position.distanceTo(pCam.position) < 0.35; // don't let the tether block the chase camera
+      ropeDummy.scale.set(nearCam ? 1e-5 : rad, L, nearCam ? 1e-5 : rad); ropeDummy.updateMatrix(); links.setMatrixAt(i, ropeDummy.matrix);
+    }
+    links.instanceMatrix.needsUpdate = true;
+    const fl = g.userData.floats;
+    if (fl) {
+      for (let k = 0; k < fl.count; k++) {
+        const i = 2 * k + 1, a = R.x[i], b = R.x[i + 1], d = b.clone().sub(a).normalize();
+        const sc = a.distanceTo(pCam.position) < 0.35 ? 1e-5 : 1;
+        ropeDummy.position.copy(a); ropeDummy.quaternion.setFromUnitVectors(V3(0, 1, 0), d); ropeDummy.scale.set(sc, sc, sc); ropeDummy.updateMatrix(); fl.setMatrixAt(k, ropeDummy.matrix);
+      }
+      fl.instanceMatrix.needsUpdate = true;
+    }
+    // tell the pilot when it snags, and when it comes free
+    if (R.snag && !M.lastSnag) { pushEvent(`Tether snagged on ${R.snag}! Back up the way you came${M.rov.tether.mode === 'manual' ? ' and let out some tether (X)' : ''}, or call a diver.`, 'bad'); beep('bad'); }
+    else if (!R.snag && M.lastSnag) pushEvent('Tether is free.');
+    M.lastSnag = R.snag;
+  }
+
   function updatePoolVisuals(dt) {
     const r = M.rov, mesh = M.mesh;
+    updateTether();
     mesh.position.copy(r.p); mesh.quaternion.copy(r.qn);
     // spin props and move claw jaws
     r.thrusters.forEach(t => { const pm = mesh.userData.parts[t.id]; if (pm && pm.userData.prop) pm.userData.prop.rotation.y += t.out * dt * 40; });
@@ -1821,8 +1869,11 @@
     });
     // tether
     const r = M.rov, a = M.env.anchor;
-    g.strokeStyle = r.tetherTight ? '#ff5a5a' : 'rgba(255,230,120,.8)'; g.lineWidth = 1.5; g.setLineDash([4, 3]);
-    g.beginPath(); g.moveTo(X(a.x), Z(P.z1)); g.lineTo(X(r.p.x), Z(r.p.z)); g.stroke(); g.setLineDash([]);
+    g.strokeStyle = r.rope && r.rope.snag ? '#ff5a5a' : r.tetherTight ? '#ffb020' : 'rgba(255,230,120,.85)'; g.lineWidth = 1.5;
+    g.beginPath();
+    if (r.rope) r.rope.x.forEach((p, i) => i ? g.lineTo(X(p.x), Z(Math.min(P.z1, p.z))) : g.moveTo(X(p.x), Z(P.z1)));
+    else { g.moveTo(X(a.x), Z(P.z1)); g.lineTo(X(r.p.x), Z(r.p.z)); }
+    g.stroke();
     // ROV
     const hd = Physics.telemetry(r).heading * Math.PI / 180;
     g.save(); g.translate(X(r.p.x), Z(r.p.z)); g.rotate(hd);
@@ -1907,10 +1958,22 @@
       <p class="mdesc">${esc(def.desc)}</p>${sizeWarn}
       ${heatHtml}
       <div class="row">${actions}${hasClaw ? '<button class="btn" data-act="claw">Claw open/close (G)</button>' : ''}${def.id !== 'tank' && def.id !== 'drag' ? `<button class="btn" data-act="diver">${heat && heat.running ? 'Diver assist (−20)' : 'Diver assist'}</button>` : ''}</div>
+      ${tetherCard()}
       <div id="sheetBox">${def.drill ? drillSheet() : sheetHtml(sc)}</div>
       ${heat && heat.running ? '' : `<div class="row between rov-strip"><span class="note">Piloting: <b>${esc(design.name)}</b></span><button class="btn small" data-act="gallery">Try a ready-made ROV</button></div>`}
       ${def.rules ? `<details><summary>Rules and scoring from the parameters</summary><ul class="rules">${def.rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details>` : ''}
       ${res}`;
+  }
+
+  function tetherCard() {
+    const m = opts.tether || 'auto';
+    const modes = [['auto', 'A teammate tends it'], ['manual', 'I tend it (Z / X)'], ['loose', 'Nobody tends it']];
+    const tip = { auto: 'Your tether tender feeds tether out as you go and pulls in slack, so less of it lies around to catch on things. It can still wrap around the apparatus if you circle it.', manual: 'You are the tender: hold <kbd>Z</kbd> to pull tether in and <kbd>X</kbd> to let it out. Too little and it holds the ROV back; too much and loops lie around to snag.', loose: 'All the tether is in the pool. Loops drag behind the ROV and catch on the apparatus. This is what happens when nobody on deck manages it.' }[m];
+    return `<div class="card tether-card"><span class="sec-label">Tether</span>
+      <div class="chips">${modes.map(([k, l]) => `<button data-tmode="${k}" aria-pressed="${m === k}">${l}</button>`).join('')}</div>
+      <p class="note">${tip}</p>
+      ${m === 'manual' ? '<div class="row"><button class="btn small" data-teth="-1">◀ Pull in (Z)</button><button class="btn small" data-teth="1">Let out (X) ▶</button></div>' : ''}
+      <p class="note" id="tLive">&nbsp;</p></div>`;
   }
 
   function resultsHtml(id) {
@@ -1931,7 +1994,7 @@
     return `<details><summary>Keyboard, gamepad and touch controls</summary><div class="keys" style="margin-top:8px">
       <kbd>W / S</kbd><span>forward / back (or ↑ ↓)</span><kbd>A / D</kbd><span>turn left / right (or ← →)</span>
       <kbd>Q / E</kbd><span>strafe left / right (needs a sideways thruster)</span><kbd>R / F</kbd><span>up / dive (or Page Up / Page Down)</span>
-      <kbd>G</kbd><span>claw open / close</span><kbd>H</kbd><span>hang a ring on the J hook</span><kbd>T</kbd><span>hand rings or sacs to a teammate</span>
+      <kbd>G</kbd><span>claw open / close</span><kbd>H</kbd><span>hang a ring on the J hook</span><kbd>T</kbd><span>hand rings or sacs to a teammate</span><kbd>Z / X</kbd><span>pull tether in / let it out (when you tend the tether)</span>
       <kbd>C</kbd><span>next view: cameras, then deck and chase (cameras only during a heat)</span><kbd>V</kbd><span>deck view (counts as a peek in a heat)</span><kbd>M</kbd><span>spotter map</span>
       <kbd>Gamepad</kbd><span>left stick drive and turn, right stick strafe and up/down, A claw, B hang, X hand off, Y camera</span></div>
       <p class="note" style="margin-top:6px">The simulator works out which motors to run from where you mounted them and which way they push, the way your control box wiring would.</p></details>`;
@@ -2035,8 +2098,12 @@
       set('#mFuse', r.elec.blown ? 'BLOWN' : r.elec.heat > 0.2 ? 'HOT' : 'OK', r.elec.blown || r.elec.heat > 0.2);
       set('#mDepth', (T.depth / 0.3048).toFixed(1) + ' ft');
       set('#mSpeed', T.speed.toFixed(2) + ' m/s');
-      const out = r.p.distanceTo(M.env.anchor) / 0.3048;
-      set('#mTether', Math.round(out) + ' / ' + Math.round(r.tether.len / 0.3048) + ' ft', r.tetherTight);
+      const out = r.rope ? r.rope.L / 0.3048 : r.p.distanceTo(M.env.anchor) / 0.3048;
+      set('#mTether', Math.round(out) + ' / ' + Math.round(r.tether.len / 0.3048) + ' ft', r.tetherTight || (r.rope && r.rope.snag));
+    }
+    if (pilotTab === 'mission') {
+      const tl = $('#tLive'), R = r.rope;
+      if (tl && R) { const st = R.snag ? `<b class="warnc">Snagged on ${esc(R.snag)}</b>` : R.tension > 6 ? '<b class="warnc">Tight: it’s pulling on the ROV</b>' : R.tension > 1.5 ? 'A little tension' : 'Slack'; const h = `${Math.round(R.L / 0.3048)} of ${Math.round(r.tether.len / 0.3048)} ft out · ${st}`; if (tl.innerHTML !== h) tl.innerHTML = h; }
     } else if (pilotTab === 'data') drawChart();
     // fuse banner
     if (r.elec.blown && $('#banner').hidden) { const b = $('#banner'); b.className = 'ov banner bad'; b.innerHTML = `<span>Fuse blown: the motors are dead.</span><button class="btn small stop" data-act="fuse">Replace fuse</button>`; b.hidden = false; }

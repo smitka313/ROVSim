@@ -459,6 +459,12 @@
     });
   }
 
+  // Name the apparatus each setup adds, so a snagged tether can say what it caught on
+  const named = (fn, name) => function (M, ...a) { const n0 = M.env.obstacles.length, out = fn(M, ...a); M.env.obstacles.slice(n0).forEach(o => { o.name = o.name || name; }); return out; };
+  setupFlag = named(setupFlag, 'the tip-up');
+  setupHoop = named(setupHoop, 'the hoop');
+  setupReef = named(setupReef, 'the reef');
+
   /* ---------- mission definitions ---------- */
   const MISSIONS = {
     tank: {
@@ -642,8 +648,8 @@
         s.gates = [[0, -2.5], [-1.3, -5], [1.3, -7.5]].map(([x, z], i) => {
           const g = gateMesh(i ? 0xff7a1a : 0x22b455); g.position.set(x, 0, z); M.scene.add(g);
           const w = 0.45;
-          M.env.obstacles.push({ a: V3(x - w, -0.15, z), b: V3(x - w, -1, z), r: 0.02 }, { a: V3(x + w, -0.15, z), b: V3(x + w, -1, z), r: 0.02 },
-            { a: V3(x - w, -0.15, z), b: V3(x + w, -0.15, z), r: 0.02 }, { a: V3(x - w, -1, z), b: V3(x + w, -1, z), r: 0.02 });
+          M.env.obstacles.push({ a: V3(x - w, -0.15, z), b: V3(x - w, -1, z), r: 0.02, name: 'a gate' }, { a: V3(x + w, -0.15, z), b: V3(x + w, -1, z), r: 0.02, name: 'a gate' },
+            { a: V3(x - w, -0.15, z), b: V3(x + w, -0.15, z), r: 0.02, name: 'a gate' }, { a: V3(x - w, -1, z), b: V3(x + w, -1, z), r: 0.02, name: 'a gate' });
           return { x, z, g };
         });
         s.next = 0; s.lastZ = M.start.z;

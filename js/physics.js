@@ -59,13 +59,17 @@
     design.parts.forEach(p => { const P = PARTS[p.type]; if (P && P.tool === 'ruler') { area.z += P.len * 0.03; rotK.y += q * 0.03 * P.len ** 4 / 32; } });
 
     const pairs = thrusters.length + tools.filter(t => t.type === 'claw').length;
+    // the tether ties on at the back of the frame, halfway up
+    let zMax = -Infinity, yLo = Infinity, yHi = -Infinity;
+    design.pipes.forEach(p => [p.a, p.b].forEach(v => { zMax = Math.max(zMax, v[2]); yLo = Math.min(yLo, v[1]); yHi = Math.max(yHi, v[1]); }));
+    const attach = design.pipes.length ? V3(0, (yLo + yHi) / 2, zMax).multiplyScalar(IN).sub(cm) : V3(0, 0, 0);
     const rTether = opt('gauge').ohmPerFt * (opt('tether').ft + 3) * 2;
 
     return {
       radius: Math.max(...els.map(e => e.rel.length() + e.r)) + 0.05,
       caps, extraCaps: [], design, mp, M, Meff: M * 1.15 + RHO * mp.V * 1e-6 * 0.3, els, size, thrusters, cameras, tools, I, area, rotK, q,
       elec: { vBat: opt('battery').volts, r: rTether + opt('battery').rOhm, fuseA: opt('fuse').amps, pwm: E.control === 'pwm', amps: 0, volts: opt('battery').volts, heat: 0, blown: false, ah: 0 },
-      tether: { len: opt('tether').ft * 0.3048, floats: E.tetherFloat === 'yes', pairs },
+      tether: { len: opt('tether').ft * 0.3048, floats: E.tetherFloat === 'yes', pairs, attach, mode: 'auto' }, rope: null,
       p: V3(0, -0.5, -1), v: V3(0, 0, 0), qn: new THREE.Quaternion(), w: V3(0, 0, 0),
       cmd: { surge: 0, sway: 0, heave: 0, yaw: 0 }, contact: { floor: 0, surface: 0, obst: 0, wall: 0 }, t: 0
     };
@@ -75,7 +79,7 @@
     r.p.copy(pos); r.v.set(0, 0, 0); r.w.set(0, 0, 0);
     r.qn.setFromAxisAngle(V3(0, 1, 0), -(headingDeg || 0) * Math.PI / 180);
     r.tools.forEach(t => { t.carried = []; t.held = null; t.closed = false; });
-    r.extraCaps = [];
+    r.extraCaps = []; r.rope = null;
     r.elec.heat = 0; r.elec.blown = false;
   }
 
@@ -209,15 +213,8 @@
     // Extra forces from the mission (a buoyant egg sac in the claw, for example)
     if (env.ext) env.ext.forEach(x => addForce(x.f, x.p));
 
-    // Tether: weight (if no floats) and a hard stop at its full length
-    if (env.anchor) {
-      const dist = r.p.distanceTo(env.anchor);
-      if (!r.tether.floats) addForce(V3(0, -0.05 * r.tether.pairs * Math.min(dist, r.tether.len) * Math.min(1, -r.p.y * 3 + 0.2), 0), r.p);
-      if (dist > r.tether.len) {
-        const pull = env.anchor.clone().sub(r.p).normalize().multiplyScalar(250 * (dist - r.tether.len));
-        F.add(pull); r.tetherTight = true;
-      } else r.tetherTight = false;
-    }
+    // Tether: the rope pulls on the back of the ROV (worked out by stepRope at the end of the last step)
+    if (env.anchor && r.rope) addForce(r.rope.force, worldOf(r, r.tether.attach, V3(0, 0, 0)));
 
     // Drag in the body frame
     const qi = r.qn.clone().invert();
@@ -246,6 +243,120 @@
       r.qn.multiply(dq).normalize();
     }
     r.t += dt;
+    if (env.anchor) stepRope(r, env, dt);
+  }
+
+  /* ---------- the tether: a rope of ROPE_N links from the deck to the back of the ROV ----------
+     Position-based (XPBD) links that can only pull. Each link's stretch gives the tension, and the last
+     link's tension is the force on the ROV. The rope sinks or floats, drags in the water, lies on the
+     floor, and grips the apparatus it touches, so it can snag. */
+  const ROPE_N = 30;
+  function ropeInit(r, env) {
+    const A = env.anchor.clone(), B = worldOf(r, r.tether.attach, V3(0, 0, 0)), len = r.tether.len;
+    const L = r.tether.mode === 'loose' ? len : Math.min(len, Math.max(1, A.distanceTo(B) * 1.12 + 0.8));
+    const x = [], xp = [];
+    for (let i = 0; i <= ROPE_N; i++) { const p = A.clone().lerp(B, i / ROPE_N); x.push(p); xp.push(p.clone()); }
+    // per metre of tether: mass in air, and weight in water (a 14 AWG pair sinks about 17 g/m; foam floats every 2 ft lift it)
+    const pairs = Math.max(1, r.tether.pairs), floats = r.tether.floats;
+    r.rope = { x, xp, n: new Array(ROPE_N + 1).fill(null), hit: new Array(ROPE_N + 1).fill(null), L, kgm: 0.045 * pairs + (floats ? 0.03 : 0), netKgm: floats ? -0.025 : 0.017 * pairs,
+      lam: new Float64Array(ROPE_N), force: V3(0, 0, 0), tension: 0, cmd: 0, snag: null, snagT: 0, freeT: 0 };
+  }
+  function stepRope(r, env, dt) {
+    const B = worldOf(r, r.tether.attach, V3(0, 0, 0));
+    if (!r.rope || r.rope.x[ROPE_N].distanceTo(B) > 0.3) ropeInit(r, env); // a fresh start, or the ROV was moved by hand
+    const R = r.rope, N = ROPE_N, x = R.x, xp = R.xp, len = r.tether.len;
+    const A = env.anchor;
+    // the tender on deck decides how much tether is out
+    const mode = r.tether.mode;
+    if (mode === 'loose') R.L = len;
+    else if (mode === 'manual') R.L += R.cmd * 0.6 * dt;
+    else if (R.tension > 3) R.L += 1.2 * dt; // feel a pull, let more out
+    else {
+      // keep a little slack, and feed ahead of an ROV that is heading away
+      const away = Math.max(0, r.v.dot(B.clone().sub(A).normalize()));
+      const want = A.distanceTo(B) * 1.12 + 0.8 + away * 1.5;
+      R.L += Math.max(-0.5 * dt, Math.min(2 * dt, want - R.L));
+    }
+    R.L = Math.max(1, Math.min(len, R.L));
+    const seg = R.L / N;
+    x[0].copy(A); xp[0].copy(A); x[N].copy(B); xp[N].copy(B);
+    // move each node: weight or lift, and water drag
+    const ay = -9.81 * R.netKgm / (R.kgm * 2), keepW = Math.exp(-6 * dt), keepA = Math.exp(-0.5 * dt);
+    for (let i = 1; i < N; i++) {
+      const p = x[i], q = xp[i], wet = p.y < 0, k = wet ? keepW : keepA;
+      const vx = (p.x - q.x) * k, vy = (p.y - q.y) * k, vz = (p.z - q.z) * k;
+      q.copy(p);
+      p.x += vx; p.y += vy + (wet ? ay : -9.81) * dt * dt; p.z += vz;
+    }
+    // apparatus near the rope
+    let lo = V3(Infinity, Infinity, Infinity), hi = V3(-Infinity, -Infinity, -Infinity);
+    x.forEach(p => { lo.min(p); hi.max(p); });
+    const near = env.obstacles.filter(o => {
+      if (!o.c) { o.c = o.a.clone().add(o.b).multiplyScalar(0.5); o.h = o.a.distanceTo(o.b) / 2 + o.r; }
+      return o.c.x + o.h > lo.x && o.c.x - o.h < hi.x && o.c.y + o.h > lo.y && o.c.y - o.h < hi.y && o.c.z + o.h > lo.z && o.c.z - o.h < hi.z;
+    });
+    const W = env.walls, wInv = 1 / (R.kgm * seg), at = 1 / (400 * N) / (dt * dt), lam = R.lam;
+    lam.fill(0); R.hit.fill(null);
+    for (let it = 0; it < 8; it++) {
+      for (let i = 0; i < N; i++) {
+        const a = x[i], b = x[i + 1], wa = i === 0 ? 0 : wInv, wb = i + 1 === N ? 0 : wInv;
+        const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, d = Math.hypot(dx, dy, dz);
+        if (d < 1e-9) continue;
+        let dl = (-(d - seg) - at * lam[i]) / (wa + wb + at);
+        if (lam[i] + dl > 0) dl = -lam[i]; // a rope can only pull
+        lam[i] += dl;
+        const s = dl / d;
+        a.x -= wa * dx * s; a.y -= wa * dy * s; a.z -= wa * dz * s;
+        b.x += wb * dx * s; b.y += wb * dy * s; b.z += wb * dz * s;
+      }
+      for (let i = 1; i < N; i++) {
+        const p = x[i];
+        const fl = env.floorY(p.x, p.z) + 0.005;
+        if (p.y < fl) { p.y = fl; R.hit[i] = R.hit[i] || 'floor'; }
+        if (p.y < 0) { p.x = Math.max(W.x0 + 0.01, Math.min(W.x1 - 0.01, p.x)); p.z = Math.max(W.z0 + 0.01, Math.min(W.z1 - 0.01, p.z)); }
+        for (const o of near) {
+          const abx = o.b.x - o.a.x, aby = o.b.y - o.a.y, abz = o.b.z - o.a.z, L2 = abx * abx + aby * aby + abz * abz;
+          const t = L2 ? Math.max(0, Math.min(1, ((p.x - o.a.x) * abx + (p.y - o.a.y) * aby + (p.z - o.a.z) * abz) / L2)) : 0;
+          const cx = o.a.x + abx * t, cy = o.a.y + aby * t, cz = o.a.z + abz * t;
+          let nx = p.x - cx, ny = p.y - cy, nz = p.z - cz; const dd = Math.hypot(nx, ny, nz), rr = o.r + 0.006;
+          if (dd >= rr) continue;
+          if (dd < 1e-6) { nx = 0; ny = 1; nz = 0; } else { nx /= dd; ny /= dd; nz /= dd; }
+          p.x = cx + nx * rr; p.y = cy + ny * rr; p.z = cz + nz * rr;
+          R.hit[i] = o; R.n[i] = V3(nx, ny, nz);
+        }
+      }
+    }
+    // friction: rope on the floor drags, rope on the apparatus grips
+    for (let i = 1; i < N; i++) {
+      const h = R.hit[i]; if (!h) continue;
+      const p = x[i], q = xp[i], dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
+      if (h === 'floor') { p.x -= dx * 0.6; p.z -= dz * 0.6; continue; }
+      const n = R.n[i], dn = dx * n.x + dy * n.y + dz * n.z;
+      p.x -= (dx - n.x * dn) * 0.9; p.y -= (dy - n.y * dn) * 0.9; p.z -= (dz - n.z * dn) * 0.9;
+    }
+    // the last link's pull is the force on the ROV
+    const a = x[N - 1], dxl = a.x - B.x, dyl = a.y - B.y, dzl = a.z - B.z, dl = Math.hypot(dxl, dyl, dzl) || 1;
+    let T = Math.min(80, -lam[N - 1] / (dt * dt));
+    if (T > 3) {
+      // a taut tether barely stretches: damp the ROV moving away along it, so it doesn't bounce like a bungee
+      const v = pointVel(r, B), away = -(v.x * dxl + v.y * dyl + v.z * dzl) / dl;
+      if (away > 0) T = Math.min(80, T + 40 * away);
+    }
+    R.tension = T; R.force.set(dxl / dl * T, dyl / dl * T, dzl / dl * T);
+    r.tetherTight = T > 6;
+    // snagged: pulling hard while the rope is caught on the apparatus
+    const caught = R.hit.find(h => h && h !== 'floor');
+    if (caught && T > 4) { R.snagT += dt; R.freeT = 0; if (R.snagT > 0.8) R.snag = caught.name || 'the apparatus'; }
+    else { R.freeT += dt; if (R.freeT > 0.6) { R.snagT = 0; R.snag = null; } }
+  }
+
+  // A diver lifts the tether off the apparatus
+  function freeRope(r) {
+    const R = r.rope; if (!R) return false;
+    let n = 0;
+    for (let i = 1; i < ROPE_N; i++) { const h = R.hit[i]; if (h && h !== 'floor') { R.x[i].y += 0.25; R.xp[i].copy(R.x[i]); n++; } }
+    R.snag = null; R.snagT = 0;
+    return n > 0;
   }
 
   function pointVel(r, wp) {
@@ -293,5 +404,5 @@
     };
   }
 
-  U.Physics = { create, place, step, worldOf, telemetry, closestOnSeg, closestSegSeg, RHO, G };
+  U.Physics = { create, place, step, worldOf, telemetry, closestOnSeg, closestSegSeg, freeRope, ROPE_N, RHO, G };
 })();
